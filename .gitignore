@@ -1,0 +1,58 @@
+# ============================================================
+# Mad Makers Prospection — .gitignore racine
+# ============================================================
+
+# ── Secrets (NE JAMAIS COMMITER) ───────────────────────────────
+.env
+.env.local
+.env.*.local
+*.env
+config/.env
+**/.env
+!**/.env.example
+
+# ── Donnees operationnelles (prospects, batchs, exports) ─────
+**/data/*.json
+**/data/*.csv
+**/data/*.xlsx
+**/data/*.xls
+**/data/*.md
+!**/data/README.md
+**/data/inputs/
+**/data/site_snapshots/
+**/data/run_*.txt
+**/data/*.log
+!**/data/.gitkeep
+
+# ── Python ────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.uv/
+.python-version
+
+# ── Outils dev ────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── OS ────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Logs ──────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Claude Code (perso, ne pas push) ─────────────────────────
+.claude/settings.local.json

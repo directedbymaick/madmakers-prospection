@@ -1,0 +1,6 @@
+@echo off
+echo Fermeture de Chrome...
+taskkill /F /IM chrome.exe /T 2>nul
+timeout /t 3 /nobreak >nul
+echo Lancement Chrome avec port debug...
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --profile-directory="Profile 3" --no-first-run --remote-allow-origins=*

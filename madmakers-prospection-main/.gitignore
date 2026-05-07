@@ -1,0 +1,29 @@
+# Secrets
+.env
+.env.local
+
+# Données opérationnelles (ne jamais push de contacts)
+data/*.json
+data/*.csv
+data/*.md
+data/site_snapshots/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.uv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log

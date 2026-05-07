@@ -1,0 +1,63 @@
+# ============================================================
+# ICP Mad Makers — Santé libérale (kinés, ostéos, psychologues)
+# Nouvelle-Aquitaine — Ticket 800–1 500 €
+# ============================================================
+# Cible : cabinets libéraux de santé sans site web ou site
+# vieillissant. Dirigeants identifiables sur LinkedIn via
+# leur diplôme + spécialité. Besoin : site vitrine + prise
+# de RDV en ligne (alternative à Doctolib 199€/mois).
+# ============================================================
+
+niche:
+  code_ape: "86.90F"            # Activités de rééducation : kinés, ostéos, podologues
+  libelle: "Cabinet santé libérale"
+
+zones_prioritaires:
+  - code: "40"
+    nom: "Landes"
+    priorite: 1
+  - code: "64"
+    nom: "Pyrénées-Atlantiques (Pays Basque)"
+    priorite: 1
+  - code: "33"
+    nom: "Gironde"
+    priorite: 1
+  - code: "17"
+    nom: "Charente-Maritime"
+    priorite: 2
+  - code: "24"
+    nom: "Dordogne"
+    priorite: 2
+
+filtres:
+  effectif_min: 0               # Inclure les solo-praticiens (très courant en santé libérale)
+  effectif_max: 15              # Exclure les grands centres de santé
+  actif: true
+  age_entreprise_min_mois: 12
+
+scoring:
+  site_web_inexistant:
+    points: 35
+    description: "Pas de site — patients trouvés uniquement via Doctolib ou bouche-à-oreille"
+  site_web_obsolete:
+    points: 20
+    description: "Site existe mais non responsive / pas de prise de RDV en ligne"
+  gmb_actif:
+    points: 15
+    description: "Fiche Google Maps renseignée — comprend déjà l'enjeu digital"
+  zone_priorite_1:
+    points: 15
+    description: "Landes, Pays Basque ou Gironde"
+  zone_priorite_2:
+    points: 10
+    description: "Charente-Maritime ou Dordogne"
+  effectif_5_15:
+    points: 5
+    description: "Petit cabinet — décision rapide, interlocuteur direct"
+
+score_minimum: 40
+
+volumes:
+  batch_quotidien: 30
+  batch_max: 50
+  prospects_par_dept_min: 5

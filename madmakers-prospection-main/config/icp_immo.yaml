@@ -1,0 +1,62 @@
+# ============================================================
+# ICP Mad Makers — Agences immobilières indépendantes
+# Nouvelle-Aquitaine — Ticket 1 000–2 500 €
+# ============================================================
+# Cible : petites agences indépendantes (non-franchisées)
+# sans site propre ou avec site très vieillissant.
+# Dirigeants systématiquement trouvables sur LinkedIn.
+# ============================================================
+
+niche:
+  code_ape: "68.31Z"            # Agences immobilières
+  libelle: "Agence immobilière indépendante"
+
+zones_prioritaires:
+  - code: "40"
+    nom: "Landes"
+    priorite: 1
+  - code: "64"
+    nom: "Pyrénées-Atlantiques (Pays Basque)"
+    priorite: 1
+  - code: "33"
+    nom: "Gironde (Bordeaux / Arcachon)"
+    priorite: 1
+  - code: "17"
+    nom: "Charente-Maritime"
+    priorite: 2
+  - code: "24"
+    nom: "Dordogne"
+    priorite: 2
+
+filtres:
+  effectif_min: 1               # Micro-agences incluses (souvent solo ou binôme)
+  effectif_max: 20              # Exclure les réseaux franchisés trop structurés
+  actif: true
+  age_entreprise_min_mois: 18   # Au moins 1,5 an pour valider la structure
+
+scoring:
+  site_web_inexistant:
+    points: 35
+    description: "Pas de site propre — utilise SeLoger/LeBonCoin uniquement"
+  site_web_obsolete:
+    points: 20
+    description: "Site existe mais score PageSpeed mobile < 40 ou pas de HTTPS"
+  gmb_actif:
+    points: 15
+    description: "Fiche Google Maps renseignée — comprend déjà l'enjeu digital"
+  zone_priorite_1:
+    points: 15
+    description: "Landes, Pays Basque ou Gironde"
+  zone_priorite_2:
+    points: 10
+    description: "Charente-Maritime ou Dordogne"
+  effectif_1_5:
+    points: 5
+    description: "Structure légère — décision rapide, interlocuteur direct"
+
+score_minimum: 40
+
+volumes:
+  batch_quotidien: 30
+  batch_max: 50
+  prospects_par_dept_min: 5

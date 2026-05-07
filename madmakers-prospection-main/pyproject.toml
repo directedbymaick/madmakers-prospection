@@ -1,0 +1,16 @@
+[project]
+name = "madmakers-prospection"
+version = "0.1.0"
+description = "Pipeline commercial Mad Makers — sourcing + enrichissement + copy cold email pour restaurants Nouvelle-Aquitaine"
+requires-python = ">=3.11"
+dependencies = [
+    "requests>=2.31.0",
+    "python-dotenv>=1.0.0",
+    "beautifulsoup4>=4.12.0",
+    "pyyaml>=6.0.1",
+    "lxml>=5.0.0",
+]
+
+[tool.uv]
+# Installer les deps : `uv pip install -r requirements.txt`
+# ou avec un venv dédié : `uv venv && uv pip install -e .`
