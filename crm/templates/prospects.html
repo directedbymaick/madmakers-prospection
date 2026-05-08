@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Prospects — Mad Makers CRM{% endblock %}
+{% block page_title %}Prospects ({{ prospects|length }}){% endblock %}
+{% block topbar_actions %}
+    <a href="{{ url_for('imports_view') }}" class="btn btn-sm">Import CSV</a>
+    <a href="{{ url_for('pipeline') }}" class="btn btn-sm">Vue pipeline</a>
+{% endblock %}
+
+{% block content %}
+
+<form method="GET" class="filters">
+    <input type="text" name="q" class="search" placeholder="Recherche : nom, entreprise, titre, email..."
+           value="{{ filters.q or '' }}">
+
+    <select name="cat">
+        <option value="">Toutes catégories</option>
+        {% for k, v in CATEGORIES.items() %}
+        <option value="{{ k }}" {% if filters.cat == k %}selected{% endif %}>{{ v[0] }}</option>
+        {% endfor %}
+    </select>
+
+    <select name="stage">
+        <option value="">Tous stages</option>
+        {% for sk, sl, sc in STAGES %}
+        <option value="{{ sk }}" {% if filters.stage == sk %}selected{% endif %}>{{ sl }}</option>
+        {% endfor %}
+    </select>
+
+    <select name="ville">
+        <option value="">Toutes villes</option>
+        {% for v in villes %}
+        <option value="{{ v }}" {% if filters.ville == v %}selected{% endif %}>{{ v }}</option>
+        {% endfor %}
+    </select>
+
+    <button type="submit" class="btn btn-primary">Filtrer</button>
+    {% if filters.q or filters.cat or filters.stage or filters.ville %}
+        <a href="{{ url_for('prospects_list') }}" class="btn btn-sm">Reset</a>
+    {% endif %}
+</form>
+
+{% if prospects %}
+<div class="card card-flush">
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Nom</th>
+                <th>Entreprise</th>
+                <th>Titre</th>
+                <th>Catégorie</th>
+                <th>Stage</th>
+                <th>Ville</th>
+                <th>Intérêt</th>
+                <th>Email</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in prospects %}
+            <tr>
+                <td><a href="{{ url_for('prospect_detail', pid=p.id) }}">{{ p.nom_complet }}</a></td>
+                <td>{{ p.entreprise }}</td>
+                <td class="muted small">{{ p.titre[:50] }}{% if p.titre|length > 50 %}…{% endif %}</td>
+                <td>
+                    {% set cat = CATEGORIES.get(p.categorie, ('?', '#000', '#eee')) %}
+                    <span class="badge badge-cat-{{ p.categorie|replace('_', '-') }}">{{ cat[0] }}</span>
+                </td>
+                <td>
+                    <span class="stage-pill" style="background:{{ STAGE_COLORS.get(p.stage, '#6B7280') }}">
+                        {{ STAGE_LABELS.get(p.stage, p.stage) }}
+                    </span>
+                </td>
+                <td class="small">{{ p.ville }}</td>
+                <td class="mono small">{% if p.interet %}{{ p.interet }}/5{% else %}—{% endif %}</td>
+                <td class="mono small">
+                    {% if p.email %}<a href="mailto:{{ p.email }}">{{ p.email[:30] }}</a>{% else %}—{% endif %}
+                </td>
+                <td>
+                    <form method="POST" action="{{ url_for('call_start', pid=p.id) }}" style="display:inline">
+                        <button class="btn btn-sm btn-accent" type="submit" title="Lancer cold call">📞</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card empty empty-large">
+    Aucun prospect ne correspond aux filtres.
+    {% if filters.q or filters.cat or filters.stage or filters.ville %}
+        <div class="mt-3"><a href="{{ url_for('prospects_list') }}" class="btn">Reset filtres</a></div>
+    {% endif %}
+</div>
+{% endif %}
+
+{% endblock %}

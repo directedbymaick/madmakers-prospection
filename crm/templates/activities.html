@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Activités — Mad Makers CRM{% endblock %}
+{% block page_title %}Activités{% endblock %}
+
+{% block content %}
+
+<div class="split">
+
+    <section class="card">
+        <h2 class="row-between">
+            <span>À faire ({{ due|length }})</span>
+        </h2>
+        {% if due %}
+            {% for a in due %}
+            <div class="card card-pad-sm mb-2" style="margin-bottom:8px">
+                <div class="row-between">
+                    <div>
+                        <div style="font-weight:600">{{ a.title }}</div>
+                        <div class="small muted">
+                            {% if a.prospect_name %}<a href="{{ url_for('prospect_detail', pid=a.prospect_id) }}">{{ a.prospect_name }}</a> · {% endif %}
+                            {{ ACTIVITY_TYPES.get(a.type, [a.type])[0] }} · <b>{{ a.due_at | dt }}</b>
+                        </div>
+                        {% if a.body %}<div class="small muted mt-1">{{ a.body }}</div>{% endif %}
+                    </div>
+                    <button class="btn btn-sm" onclick="completeActivity({{ a.id }}, this)">✓</button>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="empty">Aucune action due. Excellent travail.</div>
+        {% endif %}
+    </section>
+
+    <section class="card">
+        <h2>Activité récente</h2>
+        {% if recent %}
+            <div class="timeline">
+            {% for a in recent[:30] %}
+                <div class="timeline-item type-{{ a.type }}">
+                    <div class="head">
+                        <div class="title">
+                            {{ a.title or ACTIVITY_TYPES.get(a.type, [a.type])[0] }}
+                            {% if a.prospect_name %}
+                                · <a href="{{ url_for('prospect_detail', pid=a.prospect_id) }}">{{ a.prospect_name }}</a>
+                            {% endif %}
+                        </div>
+                        <div class="time">{{ a.created_at | relative }}</div>
+                    </div>
+                    {% if a.body %}<div class="body small">{{ a.body }}</div>{% endif %}
+                </div>
+            {% endfor %}
+            </div>
+        {% else %}
+            <div class="empty">Aucune activité.</div>
+        {% endif %}
+    </section>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function completeActivity(id, btn) {
+    btn.disabled = true; btn.textContent = '...';
+    const r = await fetch('/api/activities/' + id + '/complete', {method: 'POST'});
+    if (r.ok) {
+        btn.closest('.card').style.display = 'none';
+        showToast('Activité complétée');
+    }
+}
+</script>
+{% endblock %}

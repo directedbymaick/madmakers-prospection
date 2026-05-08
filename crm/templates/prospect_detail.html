@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% block title %}{{ prospect.nom_complet }} — Mad Makers CRM{% endblock %}
+{% block page_title %}{{ prospect.nom_complet }}{% endblock %}
+{% block topbar_actions %}
+    <a href="{{ url_for('prospects_list') }}" class="btn btn-sm">← Liste</a>
+    <form method="POST" action="{{ url_for('call_start', pid=prospect.id) }}" style="display:inline">
+        <button class="btn btn-accent" type="submit">📞 Lancer cold call</button>
+    </form>
+{% endblock %}
+
+{% block content %}
+
+<div class="split">
+
+    <!-- ═══ Colonne gauche : timeline + activités ═══ -->
+    <div>
+
+        <section class="card">
+            <h2>Timeline</h2>
+            {% if activities %}
+                <div class="timeline">
+                {% for a in activities %}
+                    <div class="timeline-item type-{{ a.type }}">
+                        <div class="head">
+                            <div class="title">{{ a.title or ACTIVITY_TYPES.get(a.type, [a.type])[0] }}</div>
+                            <div class="time">{{ a.created_at | relative }}</div>
+                        </div>
+                        {% if a.body %}<div class="body small">{{ a.body }}</div>{% endif %}
+                    </div>
+                {% endfor %}
+                </div>
+            {% else %}
+                <div class="empty">Pas encore d'activité. Lance un cold call ou ajoute une note.</div>
+            {% endif %}
+        </section>
+
+        <section class="card">
+            <h2>Ajouter une note</h2>
+            <form method="POST" action="{{ url_for('prospect_add_note', pid=prospect.id) }}">
+                <textarea name="body" rows="3" placeholder="Note libre..." style="width:100%"></textarea>
+                <div class="mt-2"><button class="btn btn-primary" type="submit">Ajouter</button></div>
+            </form>
+        </section>
+
+        {% if calls %}
+        <section class="card">
+            <h2>Calls ({{ calls|length }})</h2>
+            <table class="table">
+                <thead><tr><th>#</th><th>Statut</th><th>RDV 2</th><th>Intérêt</th><th>ROI gain/payback</th><th>Date</th><th></th></tr></thead>
+                <tbody>
+                    {% for c in calls %}
+                    <tr>
+                        <td>Call {{ c.call_number }}</td>
+                        <td>{{ c.statut or '—' }}</td>
+                        <td>{{ c.rdv2_date or '—' }} {{ c.rdv2_heure or '' }}</td>
+                        <td>{% if c.interet %}{{ c.interet }}/5{% else %}—{% endif %}</td>
+                        <td class="small">
+                            {% if c.roi_gain_mensuel %}{{ '%.0f'|format(c.roi_gain_mensuel) }} €/mois{% else %}—{% endif %}
+                            {% if c.roi_payback_mois %}· {{ '%.1f'|format(c.roi_payback_mois) }} mois{% endif %}
+                        </td>
+                        <td class="small muted">{{ c.started_at | relative }}</td>
+                        <td><a href="{{ url_for('call_briefing', pid=prospect.id, cid=c.id) }}" class="btn btn-sm">Voir</a></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+        {% endif %}
+
+        {% if emails %}
+        <section class="card">
+            <h2>Emails ({{ emails|length }})</h2>
+            {% for e in emails %}
+            <div class="card card-pad-sm mb-2">
+                <div class="row-between">
+                    <div>
+                        <span class="badge">{{ e.sequence_step }}</span>
+                        <strong>{{ e.subject or '(sans objet)' }}</strong>
+                    </div>
+                    <div class="small muted">{{ e.status }} · {{ (e.sent_at or e.created_at) | dt }}</div>
+                </div>
+            </div>
+            {% endfor %}
+        </section>
+        {% endif %}
+
+    </div>
+
+    <!-- ═══ Colonne droite : identité + audit + métadonnées ═══ -->
+    <div>
+
+        <section class="card">
+            <div class="row-between mb-2">
+                {% set cat = CATEGORIES.get(prospect.categorie, ('?', '#000', '#eee')) %}
+                <span class="badge badge-cat-{{ prospect.categorie|replace('_', '-') }}">{{ cat[0] }}</span>
+                <span class="stage-pill" style="background:{{ STAGE_COLORS.get(prospect.stage, '#6B7280') }}">
+                    {{ STAGE_LABELS.get(prospect.stage, prospect.stage) }}
+                </span>
+            </div>
+
+            <form method="POST" action="{{ url_for('prospect_update', pid=prospect.id) }}" class="form-grid">
+                <label class="span-2">Titre
+                    <input type="text" name="titre" value="{{ prospect.titre or '' }}">
+                </label>
+                <label>Entreprise
+                    <input type="text" name="entreprise" value="{{ prospect.entreprise or '' }}">
+                </label>
+                <label>Ville
+                    <input type="text" name="ville" value="{{ prospect.ville or '' }}">
+                </label>
+                <label>Email
+                    <input type="email" name="email" value="{{ prospect.email or '' }}">
+                </label>
+                <label>LinkedIn
+                    <input type="url" name="linkedin_url" value="{{ prospect.linkedin_url or '' }}">
+                </label>
+                <label class="span-2">Site web
+                    <input type="url" name="site_url" value="{{ prospect.site_url or '' }}">
+                </label>
+                <label>Stage
+                    <select name="stage">
+                        {% for sk, sl, sc in STAGES %}
+                        <option value="{{ sk }}" {% if prospect.stage == sk %}selected{% endif %}>{{ sl }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>Intérêt (1-5)
+                    <input type="number" name="interet" min="1" max="5" value="{{ prospect.interet or '' }}">
+                </label>
+                <label class="span-2">Prochaine action
+                    <input type="text" name="next_action" value="{{ prospect.next_action or '' }}">
+                </label>
+                <label class="span-2">Notes
+                    <textarea name="notes">{{ prospect.notes or '' }}</textarea>
+                </label>
+                <div class="span-2"><button class="btn btn-primary" type="submit">Sauvegarder</button></div>
+            </form>
+        </section>
+
+        <section class="card">
+            <h2 class="row-between">
+                <span>Audit du site</span>
+                {% if prospect.site_url %}
+                <button class="btn btn-sm" onclick="runAudit({{ prospect.id }}, this)">↻ Rafraichir</button>
+                {% endif %}
+            </h2>
+            {% if not prospect.site_url %}
+                <div class="empty">Pas de site — catégorie SANS_SITE.</div>
+            {% elif audit %}
+                <div class="audit-grid">
+                    <div class="audit-row"><span class="lab">URL</span><span class="val mono small"><a href="{{ audit.final_url }}" target="_blank">{{ audit.final_url }}</a></span></div>
+                    <div class="audit-row"><span class="lab">HTTPS</span><span class="val">{% if audit.https %}Oui{% else %}<b style="color:#B91C1C">NON</b>{% endif %} / {{ audit.tls_version or '?' }}</span></div>
+                    <div class="audit-row"><span class="lab">Sécurité</span><span class="val"><span class="grade grade-{{ audit.security_grade }}">{{ audit.security_grade }}</span></span></div>
+                    <div class="audit-row"><span class="lab">Technos</span><span class="val small">{{ audit.technos or '—' }}</span></div>
+                    {% if audit.veillot_tags %}
+                    <div class="audit-row"><span class="lab">Signaux veillot</span><span class="val small">{{ audit.veillot_tags }}</span></div>
+                    {% endif %}
+                    <div class="audit-row"><span class="lab">Title</span><span class="val small">{{ audit.title or '—' }}</span></div>
+                    <div class="audit-row"><span class="lab">Copyright</span><span class="val">{{ audit.copyright_year or '?' }}</span></div>
+                    <div class="audit-row"><span class="lab">Images / modernes</span><span class="val">{{ audit.image_count or 0 }} / {{ audit.modern_image_count or 0 }}</span></div>
+                </div>
+                {% if audit.findings %}
+                <div class="alert alert-warn mt-3 small">{{ audit.findings | replace('\n', '<br>') | safe }}</div>
+                {% endif %}
+                <div class="mt-2 small muted">Audit du {{ audit.created_at | relative }}</div>
+            {% else %}
+                <div class="empty">Pas encore d'audit.
+                    <div class="mt-2"><button class="btn" onclick="runAudit({{ prospect.id }}, this)">Lancer l'audit</button></div>
+                </div>
+            {% endif %}
+        </section>
+
+        <section class="card">
+            <h2>Signaux triage</h2>
+            {% if prospect.veillot_signals %}
+            <h4>Veillot</h4>
+            <p class="small">{{ prospect.veillot_signals }}</p>
+            {% endif %}
+            {% if prospect.recent_signals %}
+            <h4>Récent</h4>
+            <p class="small">{{ prospect.recent_signals }}</p>
+            {% endif %}
+            {% if prospect.fetch_error %}
+            <h4>Erreur fetch</h4>
+            <p class="small muted">{{ prospect.fetch_error }}</p>
+            {% endif %}
+            {% if not prospect.veillot_signals and not prospect.recent_signals %}
+            <div class="empty small">Aucun signal triage enregistré.</div>
+            {% endif %}
+        </section>
+
+    </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function runAudit(pid, btn) {
+    btn.disabled = true; const orig = btn.textContent; btn.textContent = 'Audit en cours...';
+    try {
+        const r = await fetch('/api/prospects/' + pid + '/audit', {method: 'POST'});
+        const data = await r.json();
+        if (data.error) {
+            showToast('Erreur : ' + data.error);
+        } else if (data.ok) {
+            showToast('Audit terminé : ' + (data.security_grade || '?'));
+            setTimeout(() => location.reload(), 800);
+        } else {
+            showToast('Audit échoué : ' + (data.error || 'inconnu'));
+        }
+    } catch (e) {
+        showToast('Erreur réseau');
+    } finally {
+        btn.disabled = false; btn.textContent = orig;
+    }
+}
+</script>
+{% endblock %}

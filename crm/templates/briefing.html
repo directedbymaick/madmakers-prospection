@@ -1,0 +1,667 @@
+{% extends "base.html" %}
+{% block title %}Briefing — {{ prospect.nom_complet }}{% endblock %}
+{% block page_title %}📞 Briefing call {{ call.call_number }} — {{ prospect.nom_complet }}{% endblock %}
+{% block topbar_actions %}
+    <a href="{{ url_for('prospect_detail', pid=prospect.id) }}" class="btn btn-sm">← Retour</a>
+    <span class="muted small" id="autosave-status">Auto-save actif</span>
+{% endblock %}
+
+{% block head %}
+<style>
+/* ── Phase nav ─────────────────────────────────────────────── */
+.phase-nav {
+    position: sticky; top: 56px; z-index: 9;
+    display: flex; gap: 4px;
+    padding: 6px; background: white;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    margin-bottom: 18px; box-shadow: var(--shadow-sm);
+}
+.phase-link {
+    flex: 1; padding: 10px 12px; text-align: center;
+    color: var(--text-muted); font-weight: 600;
+    border-radius: var(--radius-sm); font-size: 13px;
+    text-decoration: none; transition: all 0.12s; line-height: 1.3;
+}
+.phase-link:hover { background: var(--surface-alt); color: var(--text); text-decoration: none; }
+.phase-link.active { background: var(--black); color: white; }
+.phase-link small { display: block; font-weight: 500; opacity: 0.7; font-size: 10px; margin-top: 2px; }
+
+/* ── Phase banners ────────────────────────────────────────── */
+.phase-banner {
+    margin: 28px 0 14px; padding: 14px 18px;
+    border-radius: var(--radius); color: white;
+}
+.phase-banner h2 { color: white; font-size: 18px; margin: 0 0 4px;
+    text-transform: uppercase; letter-spacing: 0.04em; }
+.phase-banner p { margin: 0; font-size: 13px; opacity: 0.9; }
+.phase-A { background: #4338CA; }
+.phase-B { background: #DC2626; }
+.phase-C { background: #166534; }
+.phase-D { background: #7C2D12; }
+
+h2.sec { font-size: 16px; margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--border); }
+h2.sec .num { display: inline-block; min-width: 26px; text-align: center;
+    background: var(--black); color: white; padding: 2px 8px;
+    border-radius: var(--radius-sm); font-size: 13px; margin-right: 8px; }
+
+/* ── Hook box ─────────────────────────────────────────────── */
+.hook-box {
+    background: var(--accent-soft); border-left: 4px solid var(--accent);
+    padding: 14px 18px; font-style: italic;
+    white-space: pre-wrap; line-height: 1.6;
+}
+
+/* ── ROI Calculator ───────────────────────────────────────── */
+.roi-form {
+    display: grid; grid-template-columns: repeat(2, 1fr);
+    gap: 12px; margin: 14px 0;
+}
+.roi-form label {
+    display: flex; flex-direction: column;
+    gap: 4px; font-size: 12px; color: #166534; font-weight: 700;
+}
+.roi-form input {
+    padding: 11px 14px; border: 2px solid #86EFAC;
+    border-radius: var(--radius-sm); font-size: 18px;
+    font-weight: 700; color: #052e16; background: white;
+}
+.roi-form input:focus { outline: none; border-color: var(--green); box-shadow: 0 0 0 3px rgba(34,197,94,0.15); }
+.roi-result {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+    padding: 18px 20px; background: #052e16;
+    border-radius: var(--radius); margin-top: 8px;
+}
+.roi-metric { color: white; }
+.roi-label { display: block; font-size: 11px; opacity: 0.7;
+    text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+.roi-value { display: block; font-size: 30px; font-weight: 800;
+    margin-top: 4px; letter-spacing: -0.02em; }
+.roi-verdict {
+    grid-column: span 2; padding: 12px 16px; border-radius: var(--radius-sm);
+    font-weight: 700; text-align: center; font-size: 14px;
+}
+.roi-verdict.idle  { background: #1f2937; color: #9CA3AF; }
+.roi-verdict.green { background: var(--green); color: white; }
+.roi-verdict.amber { background: #F59E0B; color: white; }
+.roi-verdict.red   { background: var(--red); color: white; }
+
+/* ── Pain points ──────────────────────────────────────────── */
+ul.pains { list-style: none; padding: 0; margin: 0; }
+ul.pains li { padding: 8px 0; border-bottom: 1px dashed var(--border); }
+ul.pains label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.sev { display: inline-block; padding: 2px 8px; color: white;
+    font-size: 10px; font-weight: 700; border-radius: 3px;
+    min-width: 64px; text-align: center; }
+.sev.CRITIQUE { background: #B91C1C; }
+.sev.HAUT     { background: #EA580C; }
+.sev.MOYEN    { background: #CA8A04; }
+.sev.BAS      { background: #6B7280; }
+.pain-label   { font-weight: 600; }
+.pain-ev      { margin-left: 80px; font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+/* ── Questions ────────────────────────────────────────────── */
+.theme-block { margin-bottom: 14px; }
+ul.q-list { list-style: none; padding: 0; margin: 0; }
+ul.q-list li { padding: 6px 0; border-bottom: 1px dashed var(--border); }
+ul.q-list label { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+.q-text { flex: 1; }
+ul.q-list textarea { width: 100%; margin-top: 4px; padding: 6px 9px;
+    border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+    font-size: 13px; resize: vertical; }
+
+/* ── Visuels ──────────────────────────────────────────────── */
+ul.visuels { list-style: none; padding: 0; margin: 0; columns: 2; column-gap: 24px; }
+ul.visuels li { break-inside: avoid; padding: 4px 0; }
+ul.visuels label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+
+/* ── Objections (Belfort loop) ─────────────────────────────── */
+details { margin-bottom: 8px; padding: 8px 14px; background: var(--surface-alt);
+    border-radius: var(--radius-sm); border-left: 3px solid var(--red); }
+details summary { cursor: pointer; font-weight: 700; color: #991B1B; }
+.loop-step { display: flex; gap: 10px; align-items: flex-start;
+    margin: 10px 0; padding-left: 12px; border-left: 2px solid var(--border); }
+.loop-tag { display: inline-block; padding: 2px 8px; color: white;
+    font-size: 10px; font-weight: 700; border-radius: 3px;
+    min-width: 70px; text-align: center; flex-shrink: 0; margin-top: 2px; }
+.loop-text { flex: 1; line-height: 1.55; }
+
+/* ── Closing patterns ─────────────────────────────────────── */
+ul.close-list { list-style: none; padding: 0; margin: 0; }
+ul.close-list li { padding: 8px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
+ul.close-list b { color: var(--red); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+.close-line { display: block; margin-top: 4px; padding: 6px 10px;
+    background: var(--red-soft); border-left: 3px solid var(--red);
+    border-radius: 3px; font-style: italic; }
+
+/* ── Args list ────────────────────────────────────────────── */
+ul.arg-list { list-style: none; padding: 0; margin: 0 0 8px; }
+ul.arg-list li { padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: 13px; line-height: 1.5; }
+ul.arg-list b { color: var(--text); }
+
+/* ── Save block ───────────────────────────────────────────── */
+.save-block {
+    margin: 32px 0 16px; padding: 24px; border-radius: var(--radius);
+    background: linear-gradient(135deg, #064e3b 0%, #166534 100%);
+    color: white; text-align: center; box-shadow: var(--shadow-lg);
+}
+.save-block h2 { color: white; font-size: 20px; margin: 0 0 8px; }
+.save-block p { margin: 0 0 16px; opacity: 0.9; font-size: 14px; }
+.big-save { background: white; color: #166534; border: 0;
+    padding: 14px 28px; border-radius: var(--radius);
+    font-weight: 700; font-size: 16px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15); transition: transform 0.1s; }
+.big-save:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(0,0,0,0.2); }
+
+/* ── Audit grid (re-used) ─────────────────────────────────── */
+.audit-grid { display: grid; gap: 4px; }
+.audit-row { display: grid; grid-template-columns: 180px 1fr; gap: 12px; padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
+.audit-row .lab { color: var(--text-muted); }
+
+.outcome-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.outcome-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-muted); font-weight: 600; }
+.outcome-grid input, .outcome-grid select {
+    padding: 8px 11px; border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm); font-size: 14px; background: white;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+
+<nav class="phase-nav">
+    <a href="#phase-A" class="phase-link active" data-phase="A">A. Préparation<small>avant l'appel</small></a>
+    <a href="#phase-B" class="phase-link" data-phase="B">B. CALL 1<small>découverte + RDV 2</small></a>
+    <a href="#phase-C" class="phase-link" data-phase="C">C. Fin Call 1<small>outcome + résumé</small></a>
+    <a href="#phase-D" class="phase-link" data-phase="D">D. CALL 2<small>maquette + closing</small></a>
+</nav>
+
+<!-- Identity -->
+<section class="card">
+    <div class="row-between mb-2">
+        {% set cat = CATEGORIES.get(prospect.categorie, ('?', '#000', '#eee')) %}
+        <span class="badge badge-cat-{{ prospect.categorie|replace('_', '-') }}">{{ cat[0] }}</span>
+        <span class="muted small">Call #{{ call.call_number }} démarré {{ call.started_at | relative }}</span>
+    </div>
+    <h2 style="font-size:22px">{{ prospect.nom_complet }} <small class="muted" style="font-size:14px">— {{ prospect.entreprise }}</small></h2>
+    <p class="muted small">
+        {{ prospect.titre }}{% if prospect.ville %} · {{ prospect.ville }}{% endif %}
+        {% if prospect.email %} · <a href="mailto:{{ prospect.email }}">{{ prospect.email }}</a>{% endif %}
+        {% if prospect.linkedin_url %} · <a href="{{ prospect.linkedin_url }}" target="_blank">LinkedIn</a>{% endif %}
+        {% if prospect.site_url %} · <a href="{{ prospect.site_url }}" target="_blank">Site</a>{% endif %}
+    </p>
+</section>
+
+<!-- ════════ PHASE A : PRÉPARATION ════════ -->
+<div class="phase-banner phase-A" id="phase-A">
+    <h2>Phase A — Préparation</h2>
+    <p>Audit factuel + arguments financiers. À lire AVANT de décrocher.</p>
+</div>
+
+<h2 class="sec"><span class="num">1</span>Audit du site</h2>
+<section class="card">
+{% if not prospect.site_url %}
+    <div class="empty">Pas de site — catégorie SANS_SITE. Angle : création à partir de zéro.</div>
+{% elif audit %}
+    <div class="audit-grid">
+        <div class="audit-row"><span class="lab">URL</span><span class="val mono small"><a href="{{ audit.final_url }}" target="_blank">{{ audit.final_url }}</a></span></div>
+        <div class="audit-row"><span class="lab">HTTPS / TLS</span><span class="val">{% if audit.https %}Oui{% else %}<b style="color:#B91C1C">NON</b>{% endif %} / {{ audit.tls_version or '?' }}</span></div>
+        <div class="audit-row"><span class="lab">Sécurité headers</span><span class="val"><span class="grade grade-{{ audit.security_grade }}">{{ audit.security_grade }}</span></span></div>
+        <div class="audit-row"><span class="lab">Technos</span><span class="val small">{{ audit.technos or '—' }}</span></div>
+        {% if audit.veillot_tags %}
+        <div class="audit-row"><span class="lab">Signaux veillot</span><span class="val small">{{ audit.veillot_tags }}</span></div>
+        {% endif %}
+        <div class="audit-row"><span class="lab">Title</span><span class="val small">{{ audit.title or '—' }}</span></div>
+        <div class="audit-row"><span class="lab">Description</span><span class="val small">{{ audit.description or '—' }}</span></div>
+        <div class="audit-row"><span class="lab">Copyright</span><span class="val">{{ audit.copyright_year or '?' }}</span></div>
+        <div class="audit-row"><span class="lab">Images / modernes</span><span class="val">{{ audit.image_count or 0 }} / {{ audit.modern_image_count or 0 }} (webp/avif)</span></div>
+        <div class="audit-row"><span class="lab">PageSpeed</span><span class="val"><a href="https://pagespeed.web.dev/report?url={{ audit.final_url }}" target="_blank">Lancer test Google →</a></span></div>
+    </div>
+    {% if audit.findings %}
+    <div class="alert alert-warn mt-3 small"><b>Findings sécu :</b><br>{{ audit.findings | replace('\n', '<br>') | safe }}</div>
+    {% endif %}
+{% else %}
+    <div class="empty">
+        Pas encore d'audit pour ce site.
+        <div class="mt-2"><button class="btn" onclick="runAudit({{ prospect.id }}, this)">Lancer audit live</button></div>
+    </div>
+{% endif %}
+</section>
+
+<h2 class="sec"><span class="num">2</span>Arguments financiers — pourquoi c'est un INVESTISSEMENT</h2>
+<section class="card">
+    <h3>Gains actifs (mesurables AVANT/APRÈS)</h3>
+    <ul class="arg-list">
+        <li><b>Gain de conversion AVANT/APRÈS.</b> Refonte avec hiérarchie commerciale + mobile-first → ratio visiteur→contact mesurable.</li>
+        <li><b>Capter la demande organique (SEO).</b> Article SEO bien positionné = leads sans coût marginal pendant des années.</li>
+        <li><b>Réduction du CAC publicitaire.</b> Landing optimisée = coût par lead réduit dès le 1er mois.</li>
+        <li><b>Accélération du cycle de vente.</b> Site qui pré-qualifie (FAQ, pricing, cas client) raccourcit le temps signature.</li>
+    </ul>
+    <h3>Gains passifs (effets long-terme)</h3>
+    <ul class="arg-list">
+        <li><b>Vitrine 24/7.</b> Site vendeur silencieux : nuit, week-end, vacances. Zéro salaire.</li>
+        <li><b>Crédibilité instantanée.</b> Prospect Google avant chaque appel — site = pre-call commercial.</li>
+        <li><b>Marque employeur.</b> Talents qualifiés vérifient le site avant de postuler.</li>
+        <li><b>Indépendance plateforme.</b> Nom de domaine inaliénable vs LinkedIn/Insta/GMB qui peuvent tomber.</li>
+    </ul>
+    <h3>Promesse Mad Makers (différenciants à mobiliser)</h3>
+    <ul class="arg-list">
+        <li><b>Livraison 10 jours</b> vs 2-3 mois en agence classique.</li>
+        <li><b>2 gates de validation écrites.</b> Maquettes signées avant dev, livraison signée avant mise en ligne.</li>
+        <li><b>Devis fixe au scope.</b> Pas de TJM ouvert. Acompte 40% / solde 60%.</li>
+        <li><b>Design unique par marché.</b> Pas de templates.</li>
+        <li><b>GA4 + Search Console + monitoring</b> installés/configurés. Pas de site sans analytics.</li>
+    </ul>
+</section>
+
+<!-- ════════ PHASE B : CALL 1 LIVE ════════ -->
+<div class="phase-banner phase-B" id="phase-B">
+    <h2>Phase B — Call 1 (qualif + caler RDV 2)</h2>
+    <p>Suivez l'ordre. Cochez ce qui est confirmé. Remplissez ce qui est dit. ROI calculé en LIVE.</p>
+</div>
+
+<h2 class="sec"><span class="num">3</span>Hook (Belfort 4-second crack — 60-90s)</h2>
+<section class="card">
+    <p class="muted small mb-2">{{ hook_scenario }}</p>
+    <div class="hook-box" id="dynamic-hook">{{ hook_text }}</div>
+    <h4 class="mt-3">Phrase de validation à obtenir (premier "oui")</h4>
+    <p class="small">« OK, je vous écoute » / « 5 minutes ok » → vous enchaînez. Sinon : « Vous préférez que je rappelle quand ? Demain matin ou en fin d'après-midi ? » (alternative-choice).</p>
+</section>
+
+<h2 class="sec"><span class="num">4</span>Découverte (intelligence gathering)</h2>
+<section class="card" id="questions-block">
+    {# Questions injectées par JS pour conserver la réactivité htmx-style. Ici simple HTML statique. #}
+    <div id="questions-host"></div>
+</section>
+
+<h2 class="sec"><span class="num">5</span>Pain points (à confirmer en live)</h2>
+<section class="card" id="pains-block">
+    <ul class="pains" id="pains-host"></ul>
+    <h4 class="mt-3">Notes additionnelles</h4>
+    <textarea data-key="pains_notes" rows="3" style="width:100%" placeholder="ce que le prospect a évoqué comme douleurs réelles..."></textarea>
+</section>
+
+<h2 class="sec"><span class="num">6</span>ROI Calculator <span class="muted small">— interactif, calcul en LIVE</span></h2>
+<section class="card">
+    <p class="muted mb-2"><b>Méthode Belfort :</b> faire calculer le prospect, pas vous. Posez chaque question, entrez le chiffre qu'il vous donne, le payback s'affiche en temps réel. <b>Communiquez le résultat directement au client.</b></p>
+    <div class="roi-form">
+        <label>(1) Valeur client moyen (€)
+            <input type="number" id="roi_valeur_client" data-key="roi_valeur_client" placeholder="ex : 5000" min="0" step="100">
+        </label>
+        <label>(2) Nouveaux leads/mois grâce au site
+            <input type="number" id="roi_leads" data-key="roi_leads" placeholder="prudent : 1, ambitieux : 5-10" min="0" step="1">
+        </label>
+        <label>(3) Taux de conversion lead→client (%)
+            <input type="number" id="roi_conversion" data-key="roi_conversion" placeholder="ex : 20" min="0" max="100" step="1">
+        </label>
+        <label>(4) Montant devis Mad Makers (€)
+            <input type="number" id="roi_devis" data-key="roi_devis" placeholder="ex : 8000" min="0" step="100">
+        </label>
+    </div>
+    <div class="roi-result">
+        <div class="roi-metric">
+            <span class="roi-label">Gain mensuel estimé</span>
+            <span class="roi-value" id="roi_gain">— €</span>
+        </div>
+        <div class="roi-metric">
+            <span class="roi-label">Payback de l'investissement</span>
+            <span class="roi-value" id="roi_payback">— mois</span>
+        </div>
+        <div class="roi-verdict idle" id="roi_verdict">Entrez les 4 chiffres pour calculer le payback.</div>
+    </div>
+    <p class="small muted mt-3"><i><b>Règle :</b> chiffres viennent du PROSPECT, jamais inventés. Si le prospect ne sait pas, on note "à mesurer" et on construit la mesure dans le RDV 2 (GA4 inclus).</i></p>
+</section>
+
+<h2 class="sec"><span class="num">7</span>Future Pacing — visualisation à déployer mid-call</h2>
+<section class="card">
+    <p class="muted mb-2"><b>Quand placer cette phrase :</b> après avoir confirmé 2-3 pains + ROI calculé, juste avant le pitch RDV 2.</p>
+    <div class="hook-box">Imaginez 3 minutes : un prospect qualifié cherche votre activité sur Google. Il tombe sur VOTRE site. En 5 secondes il comprend ce que vous faites, il voit 3 cas clients similaires au sien, il voit votre méthodologie en 4 étapes, et il prend RDV via un calendrier intégré. Vous, vous étiez en réunion. Le RDV est dans votre calendrier au réveil. Et ce prospect, sans Mad Makers, serait allé chez votre concurrent qui a un site qui convertit. Voilà ce qu'on construit — pas une vitrine, un actif commercial.</div>
+</section>
+
+<h2 class="sec"><span class="num">8</span>Demande de visuels (CRUCIAL pour la maquette RDV 2)</h2>
+<section class="card">
+    <p class="muted mb-2"><i>« Pour qu'on vous prépare une maquette LE PLUS JUSTE possible, pouvez-vous nous envoyer ce qu'il y a sur cette liste avant la fin de la semaine ? »</i></p>
+    <ul class="visuels" id="visuels-host"></ul>
+</section>
+
+<h2 class="sec"><span class="num">9</span>Pitch transition vers RDV 2 (assumed close)</h2>
+<section class="card">
+    <p><b>Phrase de bascule :</b></p>
+    <div class="hook-box">« Voilà ce que je vous propose : vous m'envoyez les visuels qu'on vient de lister, je vous bloque 30 minutes en visio mardi prochain à 14h ou jeudi à 10h — vous me dites lequel des deux marche le mieux. À ce RDV 2, je vous montre une maquette CONSTRUITE SPECIFIQUEMENT pour {{ prospect.entreprise }}, on regarde le devis précis, et là VOUS décidez si on travaille ensemble ou pas. Aucun engagement de votre côté. Mardi 14h ou jeudi 10h ? »</div>
+</section>
+
+<h2 class="sec"><span class="num">10</span>Objections — réponses Belfort (Loop)</h2>
+<section class="card">
+    <p class="muted small mb-2"><b>Méthode :</b> AGREE → BRIDGE → REINFORCE → CLOSE (alternative-choice). Cliquez chaque objection.</p>
+    <div id="objections-host"></div>
+</section>
+
+<h2 class="sec"><span class="num">11</span>Closing patterns — bibliothèque</h2>
+<section class="card">
+    <ul class="close-list" id="closes-host"></ul>
+    <p class="small muted mt-2"><i>Règle Belfort : on ferme TOUJOURS en alternative-choice ou assumed close.</i></p>
+</section>
+
+<h2 class="sec"><span class="num">12</span>Notes live</h2>
+<section class="card">
+    <h4>Contexte business / activité</h4>
+    <textarea data-key="notes_business" rows="2" style="width:100%"></textarea>
+    <h4 class="mt-2">Concurrents cités</h4>
+    <textarea data-key="notes_concurrents" rows="2" style="width:100%"></textarea>
+    <h4 class="mt-2">Refs / sites qu'il aime</h4>
+    <textarea data-key="notes_refs" rows="2" style="width:100%"></textarea>
+    <h4 class="mt-2">Budget évoqué / fourchette</h4>
+    <textarea data-key="notes_budget" rows="2" style="width:100%"></textarea>
+    <h4 class="mt-2">Autres notes / signaux</h4>
+    <textarea data-key="notes_other" rows="2" style="width:100%"></textarea>
+</section>
+
+<!-- ════════ PHASE C : OUTCOME ════════ -->
+<div class="phase-banner phase-C" id="phase-C">
+    <h2>Phase C — Fin Call 1 : outcome + résumé</h2>
+    <p>Remplissez l'outcome. Le bouton vert en bas sauvegarde TOUT en base et met à jour le stage du prospect automatiquement.</p>
+</div>
+
+<h2 class="sec"><span class="num">13</span>Outcome de l'appel 1</h2>
+<section class="card">
+    <div class="outcome-grid">
+        <label>Statut
+            <select data-key="out_statut">
+                <option value="">—</option>
+                <option>RDV 2 calé</option>
+                <option>À relancer (envoyer mail récap)</option>
+                <option>Pas intéressé</option>
+                <option>Pas le bon moment</option>
+                <option>Refus poli</option>
+                <option>Répondeur / pas joignable</option>
+            </select>
+        </label>
+        <label>Date RDV 2
+            <input type="date" data-key="out_rdv2_date">
+        </label>
+        <label>Heure RDV 2
+            <input type="time" data-key="out_rdv2_heure">
+        </label>
+        <label>Intérêt (1-5)
+            <input type="number" min="1" max="5" data-key="out_interet">
+        </label>
+        <label>Visuels promis ?
+            <select data-key="out_visuels_promis">
+                <option value="">—</option>
+                <option>Oui — déjà reçus</option>
+                <option>Oui — à envoyer</option>
+                <option>Partiellement</option>
+                <option>Non / à voir</option>
+            </select>
+        </label>
+        <label>Budget évoqué (€)
+            <input type="text" data-key="out_budget_recu" placeholder="ex : 5-10K, ou 'pas dit'">
+        </label>
+        <label class="span-2">Prochaine action
+            <input type="text" data-key="out_next" placeholder="ex : envoyer mail récap + Calendly avant 18h">
+        </label>
+        <label class="span-2">Résumé express
+            <input type="text" data-key="out_summary" placeholder="ex : Boîte sympa, RDV 2 jeudi, intéressé one-page + SEO local">
+        </label>
+    </div>
+</section>
+
+<!-- ════════ PHASE D : CALL 2 ════════ -->
+<div class="phase-banner phase-D" id="phase-D">
+    <h2>Phase D — Call 2 (RDV maquette + closing devis)</h2>
+    <p>À remplir entre Call 1 et Call 2 + pendant Call 2. Les calls 2 ont leurs propres sessions séparées.</p>
+</div>
+
+<h2 class="sec"><span class="num">14</span>Préparation maquette</h2>
+<section class="card">
+    <h4>Visuels reçus (lien Drive ou notes)</h4>
+    <textarea data-key="call2_visuels_recus" rows="2" style="width:100%"></textarea>
+    <h4 class="mt-2">Notes pour la maquette (axes, refs)</h4>
+    <textarea data-key="call2_maquette_notes" rows="3" style="width:100%"></textarea>
+    <h4 class="mt-2">Devis chiffré préparé</h4>
+    <div class="form-grid">
+        <label>Montant devis (€) <input type="number" data-key="call2_devis_montant" placeholder="ex: 8500"></label>
+        <label>Délai (jours) <input type="number" data-key="call2_devis_delai" value="10"></label>
+    </div>
+</section>
+
+<h2 class="sec"><span class="num">15</span>Présentation maquette + réactions client</h2>
+<section class="card">
+    <h4>Réactions à chaud (verbatim)</h4>
+    <textarea data-key="call2_reactions" rows="2" style="width:100%"></textarea>
+    <h4 class="mt-2">Modifications demandées</h4>
+    <textarea data-key="call2_modifs" rows="2" style="width:100%"></textarea>
+    <h4 class="mt-2">Objections sur le devis</h4>
+    <textarea data-key="call2_objections" rows="2" style="width:100%"></textarea>
+</section>
+
+<h2 class="sec"><span class="num">16</span>Outcome Call 2 (signature)</h2>
+<section class="card">
+    <div class="outcome-grid">
+        <label>Statut Call 2
+            <select data-key="call2_statut">
+                <option value="">—</option>
+                <option>Signé — acompte versé</option>
+                <option>Signé — en attente acompte</option>
+                <option>OK verbal, attend devis v2</option>
+                <option>À retravailler (modifs maquette)</option>
+                <option>Pas signé — pas le bon moment</option>
+                <option>Pas signé — concurrent choisi</option>
+                <option>Pas signé — budget</option>
+                <option>Pas signé — pas convaincu</option>
+            </select>
+        </label>
+        <label>Date signature prévue <input type="date" data-key="call2_signature_date"></label>
+        <label>Acompte 40% (€) <input type="number" data-key="call2_acompte"></label>
+        <label>Date kickoff <input type="date" data-key="call2_kickoff"></label>
+        <label class="span-2">Prochaine action <input type="text" data-key="call2_next"></label>
+        <label class="span-2">Résumé final <input type="text" data-key="call2_summary"></label>
+    </div>
+</section>
+
+<!-- SAVE BLOCK -->
+<div class="save-block">
+    <h2>Enregistrer le call & mettre à jour le prospect</h2>
+    <p>Sauvegarde dans la base, met à jour le stage du prospect automatiquement, génère les prochaines actions.</p>
+    <button class="big-save" onclick="saveCall()">📞 Enregistrer le call</button>
+    <div class="mt-2 small" id="save-feedback" style="opacity:0.85"></div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const CALL_ID = {{ call.id }};
+const PROSPECT_ID = {{ prospect.id }};
+
+// ─── Données pré-définies (questions, pains, visuels, objections, closes) ───
+const DATA = {{ briefing_data | tojson }};
+
+function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function slug(s) {
+    return String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+}
+
+// ─── Render dynamic blocks ─────────────────────────────────────
+function renderQuestions() {
+    const host = document.getElementById('questions-host');
+    host.innerHTML = DATA.questions.map(theme => {
+        const items = theme.items.map((q, i) => {
+            const k = `q_${slug(theme.theme)}_${i}`;
+            const kn = `qn_${slug(theme.theme)}_${i}`;
+            return `<li><label><input type="checkbox" data-key="${k}"><span class="q-text">${escapeHtml(q)}</span></label>
+                <textarea data-key="${kn}" rows="2" placeholder="réponse..."></textarea></li>`;
+        }).join('');
+        return `<div class="theme-block"><h3>${escapeHtml(theme.theme)}</h3><ul class="q-list">${items}</ul></div>`;
+    }).join('');
+}
+
+function renderPains() {
+    document.getElementById('pains-host').innerHTML = DATA.pains.map(p => {
+        const k = 'pain_' + slug(p.label);
+        return `<li><label><input type="checkbox" data-key="${k}">
+            <span class="sev ${p.sev}">${p.sev}</span>
+            <span class="pain-label">${escapeHtml(p.label)}</span></label>
+            <div class="pain-ev">${escapeHtml(p.evidence)}</div></li>`;
+    }).join('');
+}
+
+function renderVisuels() {
+    document.getElementById('visuels-host').innerHTML = DATA.visuels.map((v, i) =>
+        `<li><label><input type="checkbox" data-key="vis_${i}"><span>${escapeHtml(v)}</span></label></li>`
+    ).join('');
+}
+
+function renderObjections() {
+    document.getElementById('objections-host').innerHTML = DATA.objections.map(o => {
+        const tagColors = {AGREE:'#0EA5E9', BRIDGE:'#8B5CF6', REINFORCE:'#22C55E', CLOSE:'#DC2626'};
+        const parts = o.reponse.split(/\[(AGREE|BRIDGE|REINFORCE|CLOSE)\]\s*/);
+        let steps = '';
+        for (let i = 1; i < parts.length; i += 2) {
+            const tag = parts[i], text = (parts[i+1] || '').trim();
+            const color = tagColors[tag] || '#6B7280';
+            steps += `<div class="loop-step"><span class="loop-tag" style="background:${color}">${tag}</span><span class="loop-text">${escapeHtml(text)}</span></div>`;
+        }
+        return `<details><summary>${escapeHtml(o.objection)}</summary>${steps}</details>`;
+    }).join('');
+}
+
+function renderCloses() {
+    document.getElementById('closes-host').innerHTML = DATA.closes.map(c =>
+        `<li><b>${escapeHtml(c[0])}</b><br><span class="close-line">${escapeHtml(c[1])}</span></li>`
+    ).join('');
+}
+
+// ─── State management ──────────────────────────────────────────
+function getState() {
+    const state = {};
+    document.querySelectorAll('[data-key]').forEach(el => {
+        const k = el.getAttribute('data-key');
+        if (el.type === 'checkbox') state[k] = el.checked;
+        else state[k] = el.value;
+    });
+    return state;
+}
+
+function applyState(state) {
+    if (!state) return;
+    document.querySelectorAll('[data-key]').forEach(el => {
+        const k = el.getAttribute('data-key');
+        if (state[k] === undefined) return;
+        if (el.type === 'checkbox') el.checked = !!state[k];
+        else el.value = state[k];
+    });
+    updateROI();
+}
+
+let saveTimer = null;
+function autosave() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(async () => {
+        try {
+            await fetch('/api/calls/' + CALL_ID + '/save', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(getState())
+            });
+            const s = document.getElementById('autosave-status');
+            if (s) { s.textContent = 'Sauvé ' + new Date().toLocaleTimeString(); }
+        } catch (e) {}
+    }, 600);
+}
+
+// ─── ROI Calculator live ───────────────────────────────────────
+function updateROI() {
+    const vc = parseFloat(document.getElementById('roi_valeur_client').value) || 0;
+    const leads = parseFloat(document.getElementById('roi_leads').value) || 0;
+    const conv = (parseFloat(document.getElementById('roi_conversion').value) || 0) / 100;
+    const devis = parseFloat(document.getElementById('roi_devis').value) || 0;
+    const gain = vc * leads * conv;
+    const payback = (gain > 0 && devis > 0) ? (devis / gain) : null;
+    const fmt = n => n > 0 ? n.toLocaleString('fr-FR', {maximumFractionDigits: 0}) + ' €' : '— €';
+    document.getElementById('roi_gain').textContent = fmt(gain);
+    document.getElementById('roi_payback').textContent = payback ? payback.toFixed(1) + ' mois' : '— mois';
+    const v = document.getElementById('roi_verdict');
+    v.classList.remove('idle', 'green', 'amber', 'red');
+    if (!payback) { v.classList.add('idle'); v.textContent = 'Entrez les 4 chiffres pour calculer le payback.'; }
+    else if (payback < 6) { v.classList.add('green'); v.textContent = `Payback ${payback.toFixed(1)} mois — ROI fort. Communiquez : "vous récupérez l'investissement en moins de 6 mois". Closez le RDV 2.`; }
+    else if (payback < 12) { v.classList.add('amber'); v.textContent = `Payback ${payback.toFixed(1)} mois — ROI acceptable, défendable. Renforcez avec gains passifs.`; }
+    else { v.classList.add('red'); v.textContent = `Payback ${payback.toFixed(1)} mois — argumentez sur gains passifs et coût d'opportunité.`; }
+}
+
+// ─── Phase nav scroll-spy ──────────────────────────────────────
+function initPhaseNav() {
+    const links = document.querySelectorAll('.phase-link');
+    const ids = ['phase-A', 'phase-B', 'phase-C', 'phase-D'];
+    function setActive(p) { links.forEach(l => l.classList.toggle('active', l.dataset.phase === p)); }
+    window.addEventListener('scroll', () => {
+        let cur = 'A';
+        for (const id of ids) {
+            const el = document.getElementById(id);
+            if (el && el.getBoundingClientRect().top < 200) cur = id.split('-')[1];
+        }
+        setActive(cur);
+    });
+}
+
+// ─── Save call to DB ───────────────────────────────────────────
+async function saveCall() {
+    const fb = document.getElementById('save-feedback');
+    fb.textContent = 'Sauvegarde...';
+    try {
+        const r = await fetch('/api/calls/' + CALL_ID + '/complete', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({state: getState()})
+        });
+        const data = await r.json();
+        if (data.ok) {
+            fb.innerHTML = '✓ Call enregistré, stage prospect mis à jour.';
+            showToast('Call sauvé');
+            setTimeout(() => location.href = data.redirect, 700);
+        } else {
+            fb.textContent = 'Erreur : ' + (data.error || 'inconnu');
+        }
+    } catch (e) {
+        fb.textContent = 'Erreur réseau : ' + e.message;
+    }
+}
+
+// ─── Audit live (re-run) ───────────────────────────────────────
+async function runAudit(pid, btn) {
+    btn.disabled = true; btn.textContent = 'Audit en cours...';
+    const r = await fetch('/api/prospects/' + pid + '/audit', {method: 'POST'});
+    const d = await r.json();
+    if (d.ok) { showToast('Audit terminé : ' + (d.security_grade || '?')); setTimeout(() => location.reload(), 800); }
+    else { showToast('Échec audit'); btn.disabled = false; btn.textContent = 'Réessayer'; }
+}
+
+// ─── Init ──────────────────────────────────────────────────────
+renderQuestions();
+renderPains();
+renderVisuels();
+renderObjections();
+renderCloses();
+
+// Restore previous state if exists
+const savedState = {{ saved_state | tojson }};
+if (savedState && Object.keys(savedState).length > 0) {
+    applyState(savedState);
+}
+
+// Listen for changes (autosave + ROI update)
+document.querySelectorAll('[data-key]').forEach(el => {
+    el.addEventListener('input', autosave);
+    el.addEventListener('change', autosave);
+});
+['roi_valeur_client', 'roi_leads', 'roi_conversion', 'roi_devis'].forEach(id => {
+    document.getElementById(id).addEventListener('input', updateROI);
+});
+
+updateROI();
+initPhaseNav();
+</script>
+{% endblock %}

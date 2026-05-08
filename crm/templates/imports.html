@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Imports — Mad Makers CRM{% endblock %}
+{% block page_title %}Imports{% endblock %}
+
+{% block content %}
+
+<section class="card">
+    <h2>Import RocketReach CSV</h2>
+    <p>Pour importer un nouveau batch de prospects RocketReach :</p>
+
+    <ol style="line-height:1.8">
+        <li>Place le CSV dans <code>linkedin-scraper/data/inputs/</code></li>
+        <li>Lance le pipeline triage :
+            <pre style="background:var(--surface-alt);padding:10px;border-radius:4px;font-size:12px">cd linkedin-scraper && python -X utf8 scripts/triage_sites.py
+python -X utf8 scripts/reclassify_triage.py
+python -X utf8 scripts/triage_recheck.py</pre>
+        </li>
+        <li>Importe le CSV final dans le CRM :
+            <pre style="background:var(--surface-alt);padding:10px;border-radius:4px;font-size:12px">python -X utf8 -m crm.import_prospects</pre>
+        </li>
+    </ol>
+
+    <p class="small muted">Le script d'import détecte automatiquement le CSV le plus récent. Pour reset complet : <code>--reset</code>.</p>
+</section>
+
+<section class="card">
+    <h2>Pipeline complet (one-shot)</h2>
+    <p class="small muted">Pour traiter un nouveau CSV de bout en bout, depuis le RocketReach brut jusqu'au CRM :</p>
+    <pre style="background:var(--surface-alt);padding:14px;border-radius:4px;font-size:12px;line-height:1.6">cd linkedin-scraper
+
+# 1. Place le CSV dans data/inputs/
+
+# 2. Triage HTML scoring (sans_site / veillot / récent)
+python -X utf8 scripts/triage_sites.py
+
+# 3. Reclassification stricte
+python -X utf8 scripts/reclassify_triage.py
+
+# 4. URL discovery v2 sur les sans_site
+python -X utf8 scripts/triage_recheck.py
+
+# 5. WebSearch + apply manual URLs (si besoin)
+python -X utf8 scripts/triage_apply_manual.py
+
+# 6. Import dans le CRM
+cd ..
+python -X utf8 -m crm.import_prospects</pre>
+</section>
+
+<section class="card">
+    <h2>Cold call briefing standalone</h2>
+    <p class="small muted">L'ancien outil HTML autonome reste disponible (génère un fichier HTML local) :</p>
+    <pre style="background:var(--surface-alt);padding:10px;border-radius:4px;font-size:12px">python -X utf8 linkedin-scraper/scripts/cold_call.py --name "Daniel Schemla" --open</pre>
+    <p class="small muted">Mais il est recommandé d'utiliser le briefing intégré du CRM (depuis la fiche prospect) — données sauvées directement en base.</p>
+</section>
+
+{% endblock %}

@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Mad Makers CRM{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+{% block topbar_actions %}
+    <a href="{{ url_for('prospects_list') }}" class="btn btn-primary">Voir prospects</a>
+{% endblock %}
+
+{% block content %}
+
+<div class="kpi-grid">
+    <div class="kpi accent">
+        <div class="label">Total prospects</div>
+        <div class="value">{{ stats.total }}</div>
+        <div class="sub">en base · 500 max RocketReach</div>
+    </div>
+    <div class="kpi red">
+        <div class="label">Sans site</div>
+        <div class="value">{{ stats.by_cat.get('sans_site', 0) }}</div>
+        <div class="sub">cible création from scratch</div>
+    </div>
+    <div class="kpi orange">
+        <div class="label">Site veillot</div>
+        <div class="value">{{ stats.by_cat.get('avec_site_veillot', 0) }}</div>
+        <div class="sub">cible refonte priorité 1</div>
+    </div>
+    <div class="kpi blue">
+        <div class="label">Site récent</div>
+        <div class="value">{{ stats.by_cat.get('avec_site_recent', 0) }}</div>
+        <div class="sub">low prio · angle conversion / SEO</div>
+    </div>
+</div>
+
+<div class="kpi-grid">
+    <div class="kpi">
+        <div class="label">Calls cette semaine</div>
+        <div class="value">{{ stats.calls_week }}</div>
+        <div class="sub">total: {{ stats.calls_total }}</div>
+    </div>
+    <div class="kpi orange">
+        <div class="label">RDV 2 calés</div>
+        <div class="value">{{ stats.rdv2_count }}</div>
+        <div class="sub">à présenter maquette</div>
+    </div>
+    <div class="kpi green">
+        <div class="label">Signés</div>
+        <div class="value">{{ stats.signed }}</div>
+        <div class="sub">deals closed</div>
+    </div>
+    <div class="kpi accent">
+        <div class="label">Payback moyen</div>
+        <div class="value">{% if stats.avg_payback %}{{ '%.1f'|format(stats.avg_payback) }}{% else %}—{% endif %}</div>
+        <div class="sub">mois (sur calls avec ROI)</div>
+    </div>
+</div>
+
+<div class="split">
+
+    <section class="card">
+        <h2 class="row-between">
+            <span>Activité récente</span>
+            <a href="{{ url_for('activities_list') }}" class="btn btn-sm">Tout voir</a>
+        </h2>
+        {% if recent_activities %}
+            <div class="timeline">
+                {% for a in recent_activities[:12] %}
+                <div class="timeline-item type-{{ a.type }}">
+                    <div class="head">
+                        <div class="title">
+                            {{ ACTIVITY_TYPES.get(a.type, [a.type])[0] }}
+                            {% if a.prospect_name %}
+                                · <a href="{{ url_for('prospect_detail', pid=a.prospect_id) }}">{{ a.prospect_name }}</a>
+                            {% endif %}
+                        </div>
+                        <div class="time">{{ a.created_at | relative }}</div>
+                    </div>
+                    {% if a.title %}<div>{{ a.title }}</div>{% endif %}
+                    {% if a.body %}<div class="body small">{{ a.body }}</div>{% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="empty">Aucune activité encore. Lancez un cold call depuis un prospect pour commencer.</div>
+        {% endif %}
+    </section>
+
+    <section class="card">
+        <h2 class="row-between">
+            <span>À faire aujourd'hui</span>
+            <span class="badge">{{ stats.due_today }}</span>
+        </h2>
+        {% if due_activities %}
+            {% for a in due_activities %}
+            <div class="card card-pad-sm mb-2" style="margin-bottom:8px">
+                <div class="row-between">
+                    <div>
+                        <div style="font-weight:600">{{ a.title }}</div>
+                        <div class="small muted">
+                            {% if a.prospect_name %}<a href="{{ url_for('prospect_detail', pid=a.prospect_id) }}">{{ a.prospect_name }}</a> · {% endif %}
+                            {{ ACTIVITY_TYPES.get(a.type, [a.type])[0] }} · {{ a.due_at | dt }}
+                        </div>
+                    </div>
+                    <button class="btn btn-sm" onclick="completeActivity({{ a.id }}, this)">✓</button>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="empty">Pas d'action due aujourd'hui.</div>
+        {% endif %}
+
+        <hr class="hr">
+
+        <h3>Pipeline overview</h3>
+        {% for stage_key, stage_label, color in STAGES %}
+            {% set count = stats.by_stage.get(stage_key, 0) %}
+            {% if count > 0 %}
+            <div class="row-between mt-2">
+                <span class="row gap-2">
+                    <span class="stage-pill" style="background:{{ color }}">{{ stage_label }}</span>
+                </span>
+                <span class="muted small">{{ count }}</span>
+            </div>
+            {% endif %}
+        {% endfor %}
+    </section>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function completeActivity(id, btn) {
+    btn.disabled = true; btn.textContent = '...';
+    const r = await fetch('/api/activities/' + id + '/complete', {method: 'POST'});
+    if (r.ok) {
+        btn.closest('.card').style.display = 'none';
+        showToast('Activité complétée');
+    }
+}
+</script>
+{% endblock %}

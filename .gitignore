@@ -58,3 +58,9 @@ logs/
 
 # ── Claude Code (perso, ne pas push) ─────────────────────────
 .claude/settings.local.json
+
+# ── CRM local DB (RGPD : prospects emails) ───────────────────
+crm/data/*.db
+crm/data/*.db-journal
+crm/data/*.db-wal
+crm/data/*.db-shm

@@ -1,0 +1,71 @@
+"""crm.db — SQLite connection helpers + auto-init."""
+import sqlite3
+from contextlib import contextmanager
+from .config import DB_PATH, SCHEMA_PATH
+
+
+def _row_factory(cursor, row):
+    """Return rows as dicts (column name → value)."""
+    return {col[0]: row[i] for i, col in enumerate(cursor.description)}
+
+
+def get_conn():
+    """Get a SQLite connection with FK enabled and dict rows."""
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH, detect_types=sqlite3.PARSE_DECLTYPES)
+    conn.row_factory = _row_factory
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
+@contextmanager
+def cursor():
+    """Context manager: yields cursor + commits on exit, rolls back on error."""
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        yield cur
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def init_db():
+    """Apply schema.sql to create tables if not exist."""
+    sql = SCHEMA_PATH.read_text(encoding="utf-8")
+    conn = get_conn()
+    try:
+        conn.executescript(sql)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def query(sql, params=()):
+    """Run SELECT, return list of dicts."""
+    with cursor() as cur:
+        cur.execute(sql, params)
+        return cur.fetchall()
+
+
+def query_one(sql, params=()):
+    """Run SELECT, return single dict or None."""
+    rows = query(sql, params)
+    return rows[0] if rows else None
+
+
+def execute(sql, params=()):
+    """Run INSERT/UPDATE/DELETE, return lastrowid."""
+    with cursor() as cur:
+        cur.execute(sql, params)
+        return cur.lastrowid
+
+
+def execute_many(sql, params_list):
+    """Bulk insert/update."""
+    with cursor() as cur:
+        cur.executemany(sql, params_list)
+        return cur.rowcount

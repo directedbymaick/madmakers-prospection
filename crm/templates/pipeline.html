@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Pipeline — Mad Makers CRM{% endblock %}
+{% block page_title %}Pipeline{% endblock %}
+{% block topbar_actions %}
+    <a href="{{ url_for('prospects_list') }}" class="btn btn-sm">Liste</a>
+{% endblock %}
+
+{% block content %}
+
+<div class="kanban">
+    {% for stage_key, stage_label, color in STAGES %}
+        {% set cards = by_stage.get(stage_key, []) %}
+        <div class="kanban-col" data-stage="{{ stage_key }}">
+            <div class="kanban-col-header" style="background:{{ color }}">
+                <span>{{ stage_label }}</span>
+                <span>{{ cards|length }}</span>
+            </div>
+            <div class="kanban-col-body" data-stage="{{ stage_key }}"
+                 ondragover="onDragOver(event)" ondrop="onDrop(event)" ondragleave="onDragLeave(event)">
+                {% for p in cards %}
+                <div class="kanban-card" draggable="true" data-pid="{{ p.id }}"
+                     ondragstart="onDragStart(event)" ondragend="onDragEnd(event)">
+                    <div class="name"><a href="{{ url_for('prospect_detail', pid=p.id) }}">{{ p.nom_complet }}</a></div>
+                    <div class="meta">
+                        <span>{{ p.entreprise }}</span>
+                        {% if p.interet %}<span class="interet">★ {{ p.interet }}/5</span>{% endif %}
+                    </div>
+                    <div class="meta">
+                        {% set cat = CATEGORIES.get(p.categorie, ('?', '#000', '#eee')) %}
+                        <span class="badge badge-cat-{{ p.categorie|replace('_', '-') }}">{{ cat[0] }}</span>
+                        {% if p.ville %}<span class="muted">{{ p.ville }}</span>{% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    {% endfor %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let dragged = null;
+
+function onDragStart(e) {
+    dragged = e.target;
+    e.target.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+}
+function onDragEnd(e) {
+    e.target.classList.remove('dragging');
+    document.querySelectorAll('.kanban-col-body').forEach(el => el.classList.remove('drag-over'));
+}
+function onDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    e.currentTarget.classList.add('drag-over');
+}
+function onDragLeave(e) {
+    e.currentTarget.classList.remove('drag-over');
+}
+async function onDrop(e) {
+    e.preventDefault();
+    e.currentTarget.classList.remove('drag-over');
+    if (!dragged) return;
+    const pid = dragged.dataset.pid;
+    const newStage = e.currentTarget.dataset.stage;
+    e.currentTarget.appendChild(dragged);
+    // Update column counters
+    document.querySelectorAll('.kanban-col').forEach(col => {
+        const n = col.querySelector('.kanban-col-body').children.length;
+        col.querySelector('.kanban-col-header span:last-child').textContent = n;
+    });
+    try {
+        const r = await fetch('/api/prospects/' + pid + '/stage', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({stage: newStage}),
+        });
+        if (r.ok) showToast('Stage mis à jour');
+    } catch (err) { showToast('Erreur réseau'); }
+}
+</script>
+{% endblock %}

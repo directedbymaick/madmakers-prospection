@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Mad Makers CRM{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+<script src="https://unpkg.com/htmx.org@2.0.4"></script>
+{% block head %}{% endblock %}
+</head>
+<body>
+
+<div class="app">
+
+    <aside class="sidebar">
+        <div class="brand">
+            Mad Makers
+            <small>CRM v0.1</small>
+        </div>
+        <nav>
+            <a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">
+                <span class="icon">▣</span> Dashboard
+            </a>
+            <a href="{{ url_for('prospects_list') }}" class="{% if request.endpoint and request.endpoint.startswith('prospects') %}active{% endif %}">
+                <span class="icon">☰</span> Prospects
+            </a>
+            <a href="{{ url_for('pipeline') }}" class="{% if request.endpoint == 'pipeline' %}active{% endif %}">
+                <span class="icon">⌗</span> Pipeline
+            </a>
+            <a href="{{ url_for('activities_list') }}" class="{% if request.endpoint and request.endpoint.startswith('activities') %}active{% endif %}">
+                <span class="icon">◷</span> Activités
+            </a>
+            <a href="{{ url_for('imports_view') }}" class="{% if request.endpoint == 'imports_view' %}active{% endif %}">
+                <span class="icon">↥</span> Imports
+            </a>
+        </nav>
+        <div class="footer-info">
+            Local · SQLite · Flask<br>
+            Briefing intégré temps réel
+        </div>
+    </aside>
+
+    <main class="main">
+
+        <div class="topbar">
+            <h1>{% block page_title %}{% endblock %}</h1>
+            <div class="actions">
+                {% block topbar_actions %}{% endblock %}
+            </div>
+        </div>
+
+        <div class="content">
+            {% block content %}{% endblock %}
+        </div>
+
+    </main>
+
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script>
+function showToast(msg, kind = 'info') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.remove('hidden');
+    clearTimeout(window._toastTimer);
+    window._toastTimer = setTimeout(() => t.classList.add('hidden'), 2400);
+}
+</script>
+
+{% block scripts %}{% endblock %}
+
+</body>
+</html>
