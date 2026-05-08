@@ -12,13 +12,21 @@ config/.env
 !**/.env.example
 
 # ── Donnees operationnelles (prospects, batchs, exports) ─────
+# ⚠️ NE JAMAIS push sur le repo public (darthmaick). Origin = directedbymaick (privé).
 **/data/*.json
 **/data/*.csv
 **/data/*.xlsx
 **/data/*.xls
 **/data/*.md
 !**/data/README.md
-**/data/inputs/
+# inputs/ : autorise uniquement les CSVs RocketReach pour le setup collab
+**/data/inputs/*
+!**/data/inputs/.gitkeep
+!**/data/inputs/README.md
+!**/data/inputs/rocketreach_bulk_*.csv
+# Triage final uniquement (les intermédiaires restent ignorés)
+!**/data/prospects_triage_strict_*_recheck.csv
+!**/data/prospects_triage_final_*.csv
 **/data/site_snapshots/
 **/data/briefings/
 **/data/run_*.txt
