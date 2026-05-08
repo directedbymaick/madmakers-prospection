@@ -98,6 +98,17 @@
                 </span>
             </div>
 
+            {% if prospect.phone_mobile or prospect.phone_office %}
+            <div class="row gap-2 mb-3" style="flex-wrap:wrap">
+                {% if prospect.phone_mobile %}
+                <a href="tel:{{ prospect.phone_mobile | replace(' ', '') }}" class="btn btn-accent" style="font-weight:700">📱 {{ prospect.phone_mobile }}</a>
+                {% endif %}
+                {% if prospect.phone_office %}
+                <a href="tel:{{ prospect.phone_office | replace(' ', '') }}" class="btn">☎ {{ prospect.phone_office }}</a>
+                {% endif %}
+            </div>
+            {% endif %}
+
             <form method="POST" action="{{ url_for('prospect_update', pid=prospect.id) }}" class="form-grid">
                 <label class="span-2">Titre
                     <input type="text" name="titre" value="{{ prospect.titre or '' }}">
@@ -111,8 +122,17 @@
                 <label>Email
                     <input type="email" name="email" value="{{ prospect.email or '' }}">
                 </label>
+                <label>Téléphone mobile
+                    <input type="tel" name="phone_mobile" value="{{ prospect.phone_mobile or '' }}" placeholder="+33 6 ...">
+                </label>
+                <label>Téléphone bureau
+                    <input type="tel" name="phone_office" value="{{ prospect.phone_office or '' }}" placeholder="+33 1 ...">
+                </label>
                 <label>LinkedIn
                     <input type="url" name="linkedin_url" value="{{ prospect.linkedin_url or '' }}">
+                </label>
+                <label>Autres numéros
+                    <input type="text" name="phone_other" value="{{ prospect.phone_other or '' }}" placeholder="séparés par ;">
                 </label>
                 <label class="span-2">Site web
                     <input type="url" name="site_url" value="{{ prospect.site_url or '' }}">

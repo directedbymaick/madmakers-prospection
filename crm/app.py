@@ -109,8 +109,10 @@ def prospect_detail(pid):
 @app.route("/prospects/<int:pid>/update", methods=["POST"])
 def prospect_update(pid):
     fields = {}
-    for key in ("titre", "entreprise", "ville", "email", "linkedin_url",
-                "site_url", "stage", "interet", "notes", "next_action"):
+    for key in ("titre", "entreprise", "ville", "email",
+                "phone_mobile", "phone_office", "phone_other",
+                "linkedin_url", "site_url", "stage", "interet",
+                "notes", "next_action"):
         v = request.form.get(key)
         if v is not None and v != "":
             if key == "interet":

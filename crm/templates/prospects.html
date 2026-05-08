@@ -51,12 +51,14 @@
                 <th>Stage</th>
                 <th>Ville</th>
                 <th>Intérêt</th>
+                <th>Téléphone</th>
                 <th>Email</th>
                 <th></th>
             </tr>
         </thead>
         <tbody>
             {% for p in prospects %}
+            {% set phone = p.phone_mobile or p.phone_office or p.phone_other %}
             <tr>
                 <td><a href="{{ url_for('prospect_detail', pid=p.id) }}">{{ p.nom_complet }}</a></td>
                 <td>{{ p.entreprise }}</td>
@@ -72,6 +74,14 @@
                 </td>
                 <td class="small">{{ p.ville }}</td>
                 <td class="mono small">{% if p.interet %}{{ p.interet }}/5{% else %}—{% endif %}</td>
+                <td class="mono small">
+                    {% if phone %}
+                        <a href="tel:{{ phone | replace(' ', '') }}" title="{{ phone }}">{{ phone }}</a>
+                        {% if p.phone_mobile and p.phone_office and p.phone_mobile != p.phone_office %}
+                        <span class="muted" title="autres numéros">+</span>
+                        {% endif %}
+                    {% else %}—{% endif %}
+                </td>
                 <td class="mono small">
                     {% if p.email %}<a href="mailto:{{ p.email }}">{{ p.email[:30] }}</a>{% else %}—{% endif %}
                 </td>

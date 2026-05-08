@@ -189,6 +189,21 @@ ul.arg-list b { color: var(--text); }
         {% if prospect.linkedin_url %} · <a href="{{ prospect.linkedin_url }}" target="_blank">LinkedIn</a>{% endif %}
         {% if prospect.site_url %} · <a href="{{ prospect.site_url }}" target="_blank">Site</a>{% endif %}
     </p>
+    {% if prospect.phone_mobile or prospect.phone_office or prospect.phone_other %}
+    <div class="row gap-3 mt-2" style="flex-wrap:wrap;font-size:14px">
+        {% if prospect.phone_mobile %}
+            <a href="tel:{{ prospect.phone_mobile | replace(' ', '') }}" class="btn btn-accent btn-sm" style="font-weight:700;letter-spacing:0.02em">📱 {{ prospect.phone_mobile }}</a>
+        {% endif %}
+        {% if prospect.phone_office %}
+            <a href="tel:{{ prospect.phone_office | replace(' ', '') }}" class="btn btn-sm" style="font-weight:600">☎ {{ prospect.phone_office }}</a>
+        {% endif %}
+        {% if prospect.phone_other %}
+            <span class="muted small">Autres : {{ prospect.phone_other }}</span>
+        {% endif %}
+    </div>
+    {% else %}
+    <div class="alert alert-warn mt-2 small" style="margin-bottom:0">⚠ Aucun numéro de téléphone enregistré pour ce prospect — passez par LinkedIn ou Calendly.</div>
+    {% endif %}
 </section>
 
 <!-- ════════ PHASE A : PRÉPARATION ════════ -->

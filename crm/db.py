@@ -39,14 +39,32 @@ def cursor():
 
 
 def init_db():
-    """Apply schema.sql to create tables if not exist."""
+    """Apply schema.sql to create tables if not exist + run pending migrations."""
     sql = SCHEMA_PATH.read_text(encoding="utf-8")
     conn = get_conn()
     try:
         conn.executescript(sql)
+        # Migrations in-place pour DB déjà créée
+        _run_migrations(conn)
         conn.commit()
     finally:
         conn.close()
+
+
+def _run_migrations(conn):
+    """ALTER TABLE idempotent pour ajouter colonnes manquantes."""
+    cur = conn.cursor()
+    cur.execute("PRAGMA table_info(prospects)")
+    # row_factory returns dicts → utilise la clé "name"
+    existing_cols = {r["name"] for r in cur.fetchall()}
+    additions = [
+        ("phone_mobile",  "TEXT"),
+        ("phone_office",  "TEXT"),
+        ("phone_other",   "TEXT"),
+    ]
+    for col, typ in additions:
+        if col not in existing_cols:
+            cur.execute(f"ALTER TABLE prospects ADD COLUMN {col} {typ}")
 
 
 def query(sql, params=()):
