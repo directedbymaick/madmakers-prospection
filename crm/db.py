@@ -10,9 +10,14 @@ def _row_factory(cursor, row):
 
 
 def get_conn():
-    """Get a SQLite connection with FK enabled and dict rows."""
+    """Get a SQLite connection with FK enabled and dict rows.
+
+    Note : pas de PARSE_DECLTYPES — on stocke les timestamps en strings ISO
+    (format Python `datetime.isoformat()` avec T, ou date-only "YYYY-MM-DD")
+    et on les reformate côté Jinja via les filtres dt/d/relative.
+    """
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, detect_types=sqlite3.PARSE_DECLTYPES)
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = _row_factory
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
