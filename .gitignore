@@ -20,8 +20,10 @@ config/.env
 !**/data/README.md
 **/data/inputs/
 **/data/site_snapshots/
+**/data/briefings/
 **/data/run_*.txt
 **/data/*.log
+**/data/*.html
 !**/data/.gitkeep
 
 # ── Python ────────────────────────────────────────────────────
