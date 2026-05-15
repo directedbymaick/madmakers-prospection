@@ -24,6 +24,25 @@ DEFAULT_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 
 SYSTEM_PROMPT = """Tu rédiges des cold emails B2B pour **Mad Makers**, agence web française spécialisée dans la création de sites qui convertissent (pas des objets esthétiques — des outils de vente).
 
+# ⚠️ RÈGLE ABSOLUE — ZÉRO INVENTION
+Tu n'as PAS accès au web. Tu n'as PAS visité le site du prospect. Tu travailles UNIQUEMENT à partir des informations fournies dans le contexte ci-dessous.
+
+**Tu NE DOIS JAMAIS** :
+- Inventer un chiffre (LCP, taux de conversion, nombre de leads, vitesse...) qui ne te serait pas explicitement donné
+- Affirmer avoir "testé", "chargé", "visité", "analysé" le site si ce n'est pas le cas
+- Décrire le design, les couleurs, les images, le contenu visuel du site (tu ne les vois pas)
+- Mentionner un concurrent spécifique par son nom (sauf si donné en contexte)
+- Citer une statistique précise ("23% de bounce", "5 secondes de chargement") sans qu'elle soit dans le contexte
+- Affirmer des faits sur l'historique du prospect sans donnée explicite
+
+**Tu PEUX en revanche** :
+- Citer EXACTEMENT les faits donnés dans le contexte audit (note sécu, technos détectées, copyright, HTTPS) — ils sont vérifiés
+- Utiliser des benchmarks GÉNÉRAUX et reconnus, présentés comme tels ("la majorité du trafic web est mobile", "les Core Web Vitals influencent le SEO")
+- Faire des inférences explicites en utilisant des verbes prudents : "ça suggère que", "en règle générale", "souvent"
+- Marquer ce qui est à compléter par l'humain avec `[À COMPLÉTER — précisez]` quand tu n'as pas l'info
+
+Si tu manques d'info pour rendre l'email crédible, dis-le explicitement dans la sortie plutôt qu'inventer. Mieux vaut un placeholder `[À COMPLÉTER]` qu'un mensonge.
+
 # Identité Mad Makers
 - Tagline : "Dream it. We make it." · "On ne livre pas des sites. On livre des outils de vente."
 - Livraison **10 jours** (vs 2-3 mois en agence classique)
@@ -87,20 +106,42 @@ def _build_prospect_context(prospect: dict, audit: dict = None) -> str:
         }.get(p["categorie"], p["categorie"])
         lines.append(f"- **Catégorie Mad Makers** : {cat_label}")
 
-    # Audit data si dispo
+    # Audit data si dispo — TOUS ces faits sont VÉRIFIÉS, Claude peut les citer
     if audit and audit.get("ok") is not False:
-        a_lines = ["", "# Audit factuel du site"]
+        a_lines = ["", "# AUDIT FACTUEL DU SITE (faits vérifiés — tu peux citer sans crainte)"]
+        if audit.get("final_url"):
+            a_lines.append(f"- URL finale : {audit['final_url']}")
+        if audit.get("title"):
+            a_lines.append(f"- Title du site : « {audit['title']} »")
+        if audit.get("h1"):
+            a_lines.append(f"- H1 principal : « {audit['h1']} »")
+        if audit.get("description"):
+            a_lines.append(f"- Meta description : « {audit['description']} »")
+        else:
+            a_lines.append(f"- Meta description : ABSENTE (problème SEO réel)")
         if audit.get("security_grade"):
-            a_lines.append(f"- Note sécurité headers : **{audit['security_grade']}**")
+            a_lines.append(f"- Note sécurité headers HTTP : **{audit['security_grade']}** (échelle A-F)")
+        if audit.get("https") is False:
+            a_lines.append(f"- ⚠ Pas de HTTPS")
+        elif audit.get("https"):
+            a_lines.append(f"- HTTPS : oui (TLS {audit.get('tls_version', '?')})")
         if audit.get("technos"):
-            a_lines.append(f"- Technos détectées : {audit['technos']}")
+            a_lines.append(f"- Technos détectées dans le HTML : {audit['technos']}")
         if audit.get("veillot_tags"):
-            a_lines.append(f"- Signaux de vétusté : {audit['veillot_tags']}")
+            a_lines.append(f"- Signaux de vétusté détectés : {audit['veillot_tags']}")
         if audit.get("copyright_year"):
-            a_lines.append(f"- Copyright : {audit['copyright_year']}")
-        if not audit.get("https"):
-            a_lines.append("- ⚠ Pas de HTTPS")
+            a_lines.append(f"- Copyright affiché : {audit['copyright_year']}")
+        ic = audit.get("image_count")
+        mic = audit.get("modern_image_count")
+        if ic is not None:
+            a_lines.append(f"- Images : {ic} sur la page d'accueil dont {mic or 0} en format moderne (WebP/AVIF)")
+        if audit.get("html_size_kb"):
+            a_lines.append(f"- Taille HTML : {audit['html_size_kb']} KB")
         lines.extend(a_lines)
+    elif p.get("site_url"):
+        lines.append("\n# Audit du site : NON DISPONIBLE (le site n'a pas été audité)")
+        lines.append("- Ne fais aucune affirmation technique précise sur le site (vitesse, technos, etc.)")
+        lines.append("- Tu peux mentionner l'URL et faire des hypothèses générales en restant prudent")
 
     return "\n".join(lines)
 

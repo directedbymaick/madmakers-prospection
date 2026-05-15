@@ -514,11 +514,19 @@ def api_ai_draft_email():
         if a:
             audit = {
                 "ok": True,
-                "security_grade": a.get("security_grade"),
-                "technos": a.get("technos"),
-                "veillot_tags": a.get("veillot_tags"),
-                "copyright_year": a.get("copyright_year"),
-                "https": a.get("https"),
+                "security_grade":      a.get("security_grade"),
+                "technos":             a.get("technos"),
+                "veillot_tags":        a.get("veillot_tags"),
+                "copyright_year":      a.get("copyright_year"),
+                "https":               a.get("https"),
+                "title":               a.get("title"),
+                "description":         a.get("description"),
+                "h1":                  a.get("h1"),
+                "image_count":         a.get("image_count"),
+                "modern_image_count":  a.get("modern_image_count"),
+                "html_size_kb":        a.get("html_size_kb"),
+                "tls_version":         a.get("tls_version"),
+                "final_url":           a.get("final_url"),
             }
 
     base_template = None
@@ -738,10 +746,58 @@ def api_complete_activity(aid):
     return jsonify({"ok": True})
 
 
-# ── Routes : Imports ──────────────────────────────────────────
+# ── Routes : Imports (upload UI) ──────────────────────────────
+
+
 @app.route("/imports")
 def imports_view():
     return render_template("imports.html")
+
+
+@app.route("/api/imports/upload", methods=["POST"])
+def api_imports_upload():
+    """Upload file → parse → preview/import.
+
+    Modes :
+    - mode=preview : retourne {format, headers, row_count, sample (3 rows), extras}
+    - mode=import  : importe directement et retourne {inserted, updated, skipped}
+    """
+    from . import importer as IMP
+
+    mode = request.form.get("mode") or "preview"
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return jsonify({"error": "no_file"}), 400
+
+    try:
+        content = f.read()
+        parsed = IMP.parse_file(f.filename, content)
+    except ValueError as e:
+        return jsonify({"error": "unsupported_format", "message": str(e)}), 400
+    except Exception as e:
+        import logging
+        logging.exception("parse failed")
+        return jsonify({"error": "parse_failed", "message": str(e)}), 500
+
+    normalized = IMP.normalize_rows(parsed)
+
+    if mode == "import":
+        stats = IMP.import_to_db(normalized, user_id=current_user.id)
+        return jsonify({"ok": True, "stats": stats,
+                        "format": parsed["format"]})
+
+    # Preview mode
+    sample = normalized[:5]
+    extras = parsed.get("_extras") or {}
+    return jsonify({
+        "ok": True,
+        "filename":    f.filename,
+        "format":      parsed["format"],
+        "row_count":   len(normalized),
+        "headers":     parsed.get("headers", []),
+        "sample":      sample,
+        "extras":      extras,
+    })
 
 
 # ── Bootstrap ─────────────────────────────────────────────────

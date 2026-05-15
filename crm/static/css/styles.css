@@ -842,12 +842,12 @@ textarea {
    COMPONENTS — Timeline
    ============================================================ */
 
-.timeline { position: relative; padding-left: 28px; }
+.timeline { position: relative; padding-left: 30px; }
 .timeline::before {
     content: "";
     position: absolute;
     left: 8px; top: 0; bottom: 0;
-    width: 1px;
+    width: 2px;
     background: var(--line-2);
 }
 .timeline-item {
@@ -863,11 +863,14 @@ textarea {
 .timeline-item::before {
     content: "";
     position: absolute;
-    left: -25px; top: 16px;
+    /* Dot centered on vertical line : line at left=8 width=2 → center=9
+       Item padding-left=30, so dot left = 9 - 6 (radius) - 30 = -27 */
+    left: -27px; top: 16px;
     width: 12px; height: 12px;
     border-radius: 50%;
     background: var(--bg);
     border: 2px solid var(--fg-mute);
+    box-sizing: border-box;
 }
 .timeline-item.type-call::before          { border-color: var(--red); background: var(--red-soft); }
 .timeline-item.type-email::before         { border-color: var(--blue); background: var(--blue-soft); }

@@ -5,53 +5,350 @@
 {% block content %}
 
 <section class="card">
-    <h2>Import RocketReach CSV</h2>
-    <p>Pour importer un nouveau batch de prospects RocketReach :</p>
+    <h2>Importer des prospects</h2>
+    <p class="muted small">
+        Glisse un fichier (ou clique pour en sélectionner). Formats supportés :
+        <b>CSV, XLSX (Excel), PDF, MD, TXT</b>. Le format est détecté automatiquement.
+    </p>
 
-    <ol style="line-height:1.8">
-        <li>Place le CSV dans <code>linkedin-scraper/data/inputs/</code></li>
-        <li>Lance le pipeline triage :
-            <pre style="background:var(--surface-alt);padding:10px;border-radius:4px;font-size:12px">cd linkedin-scraper && python -X utf8 scripts/triage_sites.py
-python -X utf8 scripts/reclassify_triage.py
-python -X utf8 scripts/triage_recheck.py</pre>
-        </li>
-        <li>Importe le CSV final dans le CRM :
-            <pre style="background:var(--surface-alt);padding:10px;border-radius:4px;font-size:12px">python -X utf8 -m crm.import_prospects</pre>
-        </li>
-    </ol>
+    <div class="dropzone" id="dropzone">
+        <input type="file" id="upload-input" hidden
+               accept=".csv,.xlsx,.xlsm,.pdf,.md,.txt">
+        <div class="dropzone-content">
+            <div class="dropzone-icon">📥</div>
+            <div class="dropzone-text">
+                <b>Glisse ton fichier ici</b><br>
+                <span class="muted small">ou clique pour parcourir</span>
+            </div>
+            <div class="dropzone-hint small muted">
+                CSV (RocketReach, triage Mad Makers, ou générique) — XLSX — PDF — MD — TXT
+            </div>
+        </div>
+    </div>
 
-    <p class="small muted">Le script d'import détecte automatiquement le CSV le plus récent. Pour reset complet : <code>--reset</code>.</p>
+    <div id="upload-status" class="upload-status" hidden></div>
+
+    <div id="preview-block" class="preview-block" hidden>
+        <h3 style="margin-top:18px">Aperçu de l'import</h3>
+        <div class="preview-stats" id="preview-stats"></div>
+        <div class="preview-sample" id="preview-sample"></div>
+        <div class="preview-actions">
+            <button class="btn" onclick="cancelPreview()">Annuler</button>
+            <button class="btn btn-accent" id="confirm-import-btn" onclick="confirmImport()">
+                Confirmer l'import
+            </button>
+        </div>
+    </div>
 </section>
 
 <section class="card">
-    <h2>Pipeline complet (one-shot)</h2>
-    <p class="small muted">Pour traiter un nouveau CSV de bout en bout, depuis le RocketReach brut jusqu'au CRM :</p>
-    <pre style="background:var(--surface-alt);padding:14px;border-radius:4px;font-size:12px;line-height:1.6">cd linkedin-scraper
-
-# 1. Place le CSV dans data/inputs/
-
-# 2. Triage HTML scoring (sans_site / veillot / récent)
-python -X utf8 scripts/triage_sites.py
-
-# 3. Reclassification stricte
-python -X utf8 scripts/reclassify_triage.py
-
-# 4. URL discovery v2 sur les sans_site
-python -X utf8 scripts/triage_recheck.py
-
-# 5. WebSearch + apply manual URLs (si besoin)
-python -X utf8 scripts/triage_apply_manual.py
-
-# 6. Import dans le CRM
-cd ..
-python -X utf8 -m crm.import_prospects</pre>
+    <h2>Formats supportés (détaillé)</h2>
+    <table class="table">
+        <thead>
+            <tr><th>Format</th><th>Source typique</th><th>Auto-détection</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><b>RocketReach raw</b></td>
+                <td>Bulk export depuis rocketreach.com</td>
+                <td>Détecté via colonnes "Input - Full Name", "Recommended Email"</td>
+            </tr>
+            <tr>
+                <td><b>Triage Mad Makers</b></td>
+                <td>Sortie de <code>triage_recheck.py</code></td>
+                <td>Détecté via colonnes "categorie", "veillot_signals"</td>
+            </tr>
+            <tr>
+                <td><b>Export CRM</b></td>
+                <td>Backup d'un précédent CRM Mad Makers</td>
+                <td>Détecté via colonnes "stage", "phone_mobile"</td>
+            </tr>
+            <tr>
+                <td><b>Excel / CSV générique</b></td>
+                <td>Liste maison, export LinkedIn, autre</td>
+                <td>Mapping fuzzy des colonnes (nom, email, téléphone, etc.)</td>
+            </tr>
+            <tr>
+                <td><b>PDF / MD / TXT</b></td>
+                <td>Articles, exports, scans</td>
+                <td>Extraction regex : emails, téléphones, URLs LinkedIn</td>
+            </tr>
+        </tbody>
+    </table>
 </section>
 
-<section class="card">
-    <h2>Cold call briefing standalone</h2>
-    <p class="small muted">L'ancien outil HTML autonome reste disponible (génère un fichier HTML local) :</p>
-    <pre style="background:var(--surface-alt);padding:10px;border-radius:4px;font-size:12px">python -X utf8 linkedin-scraper/scripts/cold_call.py --name "Daniel Schemla" --open</pre>
-    <p class="small muted">Mais il est recommandé d'utiliser le briefing intégré du CRM (depuis la fiche prospect) — données sauvées directement en base.</p>
-</section>
+{% endblock %}
 
+{% block scripts %}
+<style>
+.dropzone {
+    margin: 20px 0 0;
+    padding: 60px 24px;
+    border: 2px dashed var(--line-2);
+    border-radius: var(--radius);
+    background: var(--bg-3);
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.dropzone:hover, .dropzone.dragover {
+    border-color: var(--lime);
+    background: rgba(200, 255, 61, 0.04);
+}
+.dropzone-icon { font-size: 40px; margin-bottom: 12px; }
+.dropzone-text b { color: var(--cream); font-family: var(--display); font-size: 18px; font-weight: 400; }
+.dropzone-hint { margin-top: 14px; }
+
+.upload-status {
+    margin-top: 18px;
+    padding: 14px 18px;
+    border-radius: var(--radius-sm);
+    border-left: 3px solid;
+    font-size: 13.5px;
+}
+.upload-status.loading {
+    background: var(--blue-soft);
+    border-color: var(--blue);
+    color: #cce8ff;
+}
+.upload-status.error {
+    background: var(--red-soft);
+    border-color: var(--red);
+    color: #ffcfcf;
+}
+.upload-status.success {
+    background: var(--green-soft);
+    border-color: var(--lime);
+    color: #e9ffb6;
+}
+
+.preview-block {
+    margin-top: 18px;
+    padding: 18px 20px;
+    background: var(--bg-3);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+}
+.preview-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+}
+.preview-stat {
+    background: var(--bg-2);
+    padding: 12px 14px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--line);
+}
+.preview-stat .lab {
+    font-family: var(--label);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--fg-dim);
+}
+.preview-stat .val {
+    font-family: var(--display);
+    font-size: 24px;
+    color: var(--cream);
+    margin-top: 4px;
+}
+
+.preview-sample {
+    max-height: 360px;
+    overflow: auto;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    padding: 12px;
+    margin-bottom: 16px;
+}
+.preview-sample table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.preview-sample th {
+    background: var(--bg-3);
+    text-align: left;
+    padding: 6px 8px;
+    color: var(--fg-dim);
+    font-weight: 600;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid var(--line);
+}
+.preview-sample td {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--line);
+    color: var(--cream);
+    white-space: nowrap;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.preview-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
+.format-pill {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: var(--radius-pill);
+    background: var(--lime-soft);
+    color: var(--lime);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+</style>
+
+<script>
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('upload-input');
+const statusBox = document.getElementById('upload-status');
+const previewBlock = document.getElementById('preview-block');
+let _currentFile = null;
+
+dropzone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', (e) => onFile(e.target.files[0]));
+
+['dragenter', 'dragover'].forEach(evt => {
+    dropzone.addEventListener(evt, (e) => {
+        e.preventDefault(); e.stopPropagation();
+        dropzone.classList.add('dragover');
+    });
+});
+['dragleave', 'drop'].forEach(evt => {
+    dropzone.addEventListener(evt, (e) => {
+        e.preventDefault(); e.stopPropagation();
+        dropzone.classList.remove('dragover');
+    });
+});
+dropzone.addEventListener('drop', (e) => {
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) onFile(e.dataTransfer.files[0]);
+});
+
+function showStatus(kind, msg) {
+    statusBox.className = `upload-status ${kind}`;
+    statusBox.innerHTML = msg;
+    statusBox.hidden = false;
+}
+
+function clearStatus() { statusBox.hidden = true; statusBox.innerHTML = ''; }
+
+async function onFile(file) {
+    if (!file) return;
+    _currentFile = file;
+    previewBlock.hidden = true;
+    showStatus('loading', `⏳ Lecture de <code>${file.name}</code> (${(file.size/1024).toFixed(1)} KB)...`);
+
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('mode', 'preview');
+
+    try {
+        const r = await fetch('/api/imports/upload', {method: 'POST', body: fd});
+        const data = await r.json();
+        if (!data.ok) {
+            showStatus('error', `❌ ${data.message || data.error}`);
+            return;
+        }
+        renderPreview(data);
+    } catch (e) {
+        showStatus('error', `❌ Erreur réseau : ${e.message}`);
+    }
+}
+
+function renderPreview(data) {
+    const fmt = {
+        'rocketreach':      'RocketReach',
+        'madmakers_triage': 'Triage Mad Makers',
+        'crm_export':       'Export CRM',
+        'generic':          'CSV générique',
+        'text_extracted':   'Extraction texte (PDF/MD)',
+        'empty':            'Vide',
+    }[data.format] || data.format;
+
+    showStatus('success',
+        `✓ <b>${data.filename}</b> analysé — format : <span class="format-pill">${fmt}</span>`);
+
+    // Stats
+    document.getElementById('preview-stats').innerHTML = `
+        <div class="preview-stat"><div class="lab">Format</div><div class="val">${fmt}</div></div>
+        <div class="preview-stat"><div class="lab">Lignes</div><div class="val">${data.row_count}</div></div>
+        <div class="preview-stat"><div class="lab">Headers</div><div class="val">${data.headers.length}</div></div>
+    `;
+
+    // Sample
+    const sample = document.getElementById('preview-sample');
+    if (data.sample && data.sample.length) {
+        const cols = Array.from(new Set(data.sample.flatMap(r => Object.keys(r)))).slice(0, 8);
+        sample.innerHTML = `
+            <table>
+                <thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead>
+                <tbody>
+                ${data.sample.map(r => `<tr>${cols.map(c => `<td title="${(r[c]||'').toString().replace(/"/g,'&quot;')}">${(r[c]||'')}</td>`).join('')}</tr>`).join('')}
+                </tbody>
+            </table>
+        `;
+    } else {
+        sample.innerHTML = '<p class="muted small" style="padding:14px">Aucune ligne exploitable trouvée.</p>';
+    }
+
+    // Extras (PDF/MD case)
+    const extras = data.extras;
+    if (extras && (extras.phones?.length || extras.urls?.length || extras.linkedins?.length)) {
+        sample.innerHTML += `
+            <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">
+                <h4 style="margin:0 0 8px">Autres infos extraites :</h4>
+                ${extras.phones?.length ? `<p class="small">📞 ${extras.phones.length} téléphone(s) : <span class="mono">${extras.phones.slice(0,5).join(' · ')}</span>${extras.phones.length>5?` <span class="muted">+${extras.phones.length-5}</span>`:''}</p>` : ''}
+                ${extras.linkedins?.length ? `<p class="small">🔗 ${extras.linkedins.length} LinkedIn : <span class="mono">${extras.linkedins.slice(0,3).join(' · ')}</span></p>` : ''}
+                ${extras.urls?.length ? `<p class="small">🌐 ${extras.urls.length} URL(s) détectée(s)</p>` : ''}
+            </div>
+        `;
+    }
+
+    document.getElementById('confirm-import-btn').disabled = data.row_count === 0;
+    previewBlock.hidden = false;
+}
+
+function cancelPreview() {
+    previewBlock.hidden = true;
+    clearStatus();
+    _currentFile = null;
+    fileInput.value = '';
+}
+
+async function confirmImport() {
+    if (!_currentFile) return;
+    const btn = document.getElementById('confirm-import-btn');
+    btn.disabled = true; btn.textContent = '⏳ Import en cours...';
+    showStatus('loading', '⏳ Import en base...');
+
+    const fd = new FormData();
+    fd.append('file', _currentFile);
+    fd.append('mode', 'import');
+
+    try {
+        const r = await fetch('/api/imports/upload', {method: 'POST', body: fd});
+        const data = await r.json();
+        if (data.ok) {
+            const s = data.stats;
+            showStatus('success',
+                `✅ Import terminé : <b>${s.inserted}</b> nouveaux · <b>${s.updated}</b> mis à jour · ${s.skipped} skip · ${s.total} total<br>
+                <a href="/prospects" class="btn btn-sm mt-2">Voir les prospects →</a>`);
+            previewBlock.hidden = true;
+            _currentFile = null;
+            fileInput.value = '';
+        } else {
+            showStatus('error', `❌ ${data.message || data.error}`);
+        }
+    } catch (e) {
+        showStatus('error', `❌ Erreur réseau : ${e.message}`);
+    } finally {
+        btn.disabled = false; btn.textContent = 'Confirmer l\'import';
+    }
+}
+</script>
 {% endblock %}
