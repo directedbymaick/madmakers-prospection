@@ -1,7 +1,7 @@
 """crm.models — query helpers for prospects, calls, activities, audits, emails."""
 import json
 from datetime import datetime
-from .db import query, query_one, execute, execute_many
+from .db import query, query_one, execute
 
 # ── Prospects ─────────────────────────────────────────────────
 
@@ -87,17 +87,18 @@ def latest_audit(prospect_id):
     )
 
 
-def save_audit(prospect_id, audit_dict):
+def save_audit(prospect_id, audit_dict, user_id=None):
     raw = json.dumps(audit_dict, ensure_ascii=False)
-    sql = """INSERT INTO audits (prospect_id, final_url, https, tls_version,
+    sql = """INSERT INTO audits (prospect_id, created_by_user_id, final_url, https, tls_version,
              security_grade, technos, veillot_tags, title, description, h1,
              copyright_year, html_size_kb, image_count, modern_image_count,
              findings, raw_data)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
     return execute(sql, (
         prospect_id,
+        user_id,
         audit_dict.get("final_url", ""),
-        1 if audit_dict.get("https") else 0,
+        bool(audit_dict.get("https")),
         audit_dict.get("tls_version"),
         audit_dict.get("security_grade"),
         ", ".join(audit_dict.get("technos", []) or []),
@@ -135,11 +136,11 @@ def latest_call(prospect_id):
     )
 
 
-def create_call(prospect_id, call_number=1):
+def create_call(prospect_id, call_number=1, user_id=None):
     """Start a new call session — inserts a draft row, returns id."""
     return execute(
-        "INSERT INTO calls (prospect_id, call_number) VALUES (?, ?)",
-        (prospect_id, call_number),
+        "INSERT INTO calls (prospect_id, call_number, created_by_user_id) VALUES (?, ?, ?)",
+        (prospect_id, call_number, user_id),
     )
 
 
@@ -176,17 +177,33 @@ def complete_call(call_id, state, summary, statut, next_action,
 # ── Activities ────────────────────────────────────────────────
 
 
+_USER_NAME_EXPR = (
+    "COALESCE(NULLIF(u.full_name, ''), SPLIT_PART(u.email, '@', 1))"
+)
+
+
 def list_activities(prospect_id=None, limit=50):
     if prospect_id:
         return query(
-            "SELECT * FROM activities WHERE prospect_id = ? ORDER BY created_at DESC LIMIT ?",
+            f"""SELECT a.*,
+                       {_USER_NAME_EXPR} AS author_name,
+                       u.email AS author_email
+                FROM activities a
+                LEFT JOIN users u ON u.id = a.created_by_user_id
+                WHERE a.prospect_id = ?
+                ORDER BY a.created_at DESC LIMIT ?""",
             (prospect_id, limit),
         )
     return query(
-        """SELECT a.*, p.nom_complet AS prospect_name, p.entreprise AS prospect_entreprise
-           FROM activities a
-           LEFT JOIN prospects p ON p.id = a.prospect_id
-           ORDER BY a.created_at DESC LIMIT ?""",
+        f"""SELECT a.*,
+                   p.nom_complet AS prospect_name,
+                   p.entreprise  AS prospect_entreprise,
+                   {_USER_NAME_EXPR} AS author_name,
+                   u.email AS author_email
+            FROM activities a
+            LEFT JOIN prospects p ON p.id = a.prospect_id
+            LEFT JOIN users u     ON u.id = a.created_by_user_id
+            ORDER BY a.created_at DESC LIMIT ?""",
         (limit,),
     )
 
@@ -194,21 +211,27 @@ def list_activities(prospect_id=None, limit=50):
 def list_due_activities(limit=20):
     """Activities with due_at <= now and not completed."""
     return query(
-        """SELECT a.*, p.nom_complet AS prospect_name, p.entreprise AS prospect_entreprise
-           FROM activities a
-           LEFT JOIN prospects p ON p.id = a.prospect_id
-           WHERE a.due_at IS NOT NULL AND a.completed_at IS NULL
-           ORDER BY a.due_at ASC LIMIT ?""",
+        f"""SELECT a.*,
+                   p.nom_complet AS prospect_name,
+                   p.entreprise  AS prospect_entreprise,
+                   {_USER_NAME_EXPR} AS author_name,
+                   u.email AS author_email
+            FROM activities a
+            LEFT JOIN prospects p ON p.id = a.prospect_id
+            LEFT JOIN users u     ON u.id = a.created_by_user_id
+            WHERE a.due_at IS NOT NULL AND a.completed_at IS NULL
+            ORDER BY a.due_at ASC LIMIT ?""",
         (limit,),
     )
 
 
-def create_activity(prospect_id, type_, title, body=None, due_at=None, metadata=None):
+def create_activity(prospect_id, type_, title, body=None, due_at=None, metadata=None, user_id=None):
     return execute(
-        """INSERT INTO activities (prospect_id, type, title, body, due_at, metadata)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO activities (prospect_id, type, title, body, due_at, metadata, created_by_user_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (prospect_id, type_, title, body or "", due_at,
-         json.dumps(metadata, ensure_ascii=False) if metadata else None),
+         json.dumps(metadata, ensure_ascii=False) if metadata else None,
+         user_id),
     )
 
 
@@ -260,7 +283,7 @@ def stats_overview():
     calls_week = query_one(
         """SELECT COUNT(*) AS n FROM calls
            WHERE completed_at IS NOT NULL
-           AND completed_at >= datetime('now', '-7 days')"""
+           AND completed_at >= NOW() - INTERVAL '7 days'"""
     )["n"]
     rdv2_count = query_one("SELECT COUNT(*) AS n FROM prospects WHERE stage = 'rdv_2_cale'")["n"]
     signed = query_one("SELECT COUNT(*) AS n FROM prospects WHERE stage = 'signe'")["n"]
@@ -273,7 +296,7 @@ def stats_overview():
     due_today = query_one(
         """SELECT COUNT(*) AS n FROM activities
            WHERE due_at IS NOT NULL AND completed_at IS NULL
-           AND date(due_at) <= date('now')"""
+           AND due_at::date <= CURRENT_DATE"""
     )["n"]
 
     return {

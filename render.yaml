@@ -1,0 +1,33 @@
+# ============================================================
+# Render Blueprint — Mad Makers CRM
+# https://render.com/docs/blueprint-spec
+# ============================================================
+
+services:
+  - type: web
+    name: madmakers-crm
+    runtime: python
+    plan: free                  # Free tier (sleeps après 15 min d'inactivité, 50s cold start)
+    branch: main
+    rootDir: .
+    buildCommand: pip install --upgrade pip && pip install -r crm/requirements.txt
+    startCommand: gunicorn -w 2 -b 0.0.0.0:$PORT --timeout 90 --access-logfile - --error-logfile - wsgi:app
+    healthCheckPath: /auth/login
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.0"
+      # Secrets : à remplir manuellement dans Render Dashboard → Environment
+      - key: DATABASE_URL
+        sync: false
+      - key: FLASK_SECRET_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM_EMAIL
+        value: noreply@mad-makers.fr
+      - key: RESEND_FROM_NAME
+        value: Mad Makers CRM
+      - key: APP_BASE_URL
+        sync: false                 # ex : https://madmakers-crm.onrender.com
+      - key: ALLOWED_EMAILS
+        sync: false                 # csv des emails whitelistés

@@ -1,12 +1,12 @@
 """crm.app — Flask app + routes."""
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
 from flask import Flask, render_template, request, redirect, url_for, jsonify, abort
-from flask_login import LoginManager, login_required, current_user
+from flask_login import LoginManager, current_user
 
 # Charge .env AVANT d'importer modules qui en dépendent
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
@@ -73,16 +73,26 @@ app.jinja_env.globals.update(
 
 
 # ── Filters ────────────────────────────────────────────────────
-@app.template_filter("dt")
-def dt_filter(value, fmt="%d/%m/%Y %H:%M"):
+def _parse_dt(value):
+    """Parse en datetime aware (UTC si naive)."""
     if not value:
-        return ""
+        return None
     if isinstance(value, str):
         try:
-            value = datetime.fromisoformat(value.replace("Z", ""))
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
         except Exception:
-            return value
-    return value.strftime(fmt)
+            return None
+    if isinstance(value, datetime) and value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value
+
+
+@app.template_filter("dt")
+def dt_filter(value, fmt="%d/%m/%Y %H:%M"):
+    dt = _parse_dt(value)
+    if not dt:
+        return value if isinstance(value, str) else ""
+    return dt.strftime(fmt)
 
 
 @app.template_filter("d")
@@ -92,22 +102,22 @@ def d_filter(value):
 
 @app.template_filter("relative")
 def relative_filter(value):
-    if not value:
-        return ""
-    if isinstance(value, str):
-        try:
-            value = datetime.fromisoformat(value.replace("Z", ""))
-        except Exception:
-            return value
-    delta = datetime.utcnow() - value
+    dt = _parse_dt(value)
+    if not dt:
+        return value if isinstance(value, str) else ""
+    now = datetime.now(timezone.utc)
+    delta = now - dt
+    if delta.total_seconds() < 0:
+        # date future : affiche absolu
+        return dt.strftime("%d/%m/%Y %H:%M")
     if delta.days > 30:
-        return value.strftime("%d/%m/%Y")
+        return dt.strftime("%d/%m/%Y")
     if delta.days >= 1:
         return f"il y a {delta.days}j"
-    hours = delta.seconds // 3600
+    hours = int(delta.total_seconds() // 3600)
     if hours >= 1:
         return f"il y a {hours}h"
-    minutes = max(1, delta.seconds // 60)
+    minutes = max(1, int(delta.total_seconds() // 60))
     return f"il y a {minutes}min"
 
 
@@ -172,7 +182,8 @@ def prospect_update(pid):
         prev = M.get_prospect(pid)
         if prev["stage"] != fields["stage"]:
             M.create_activity(pid, "stage_change",
-                              f"{STAGE_LABELS.get(prev['stage'], prev['stage'])} → {STAGE_LABELS.get(fields['stage'], fields['stage'])}")
+                              f"{STAGE_LABELS.get(prev['stage'], prev['stage'])} → {STAGE_LABELS.get(fields['stage'], fields['stage'])}",
+                              user_id=current_user.id)
     M.update_prospect(pid, fields)
     return redirect(url_for("prospect_detail", pid=pid))
 
@@ -181,7 +192,7 @@ def prospect_update(pid):
 def prospect_add_note(pid):
     body = request.form.get("body", "").strip()
     if body:
-        M.create_activity(pid, "note", "Note", body)
+        M.create_activity(pid, "note", "Note", body, user_id=current_user.id)
     return redirect(url_for("prospect_detail", pid=pid))
 
 
@@ -192,8 +203,8 @@ def call_start(pid):
     if not p:
         abort(404)
     call_number = 2 if p["stage"] in ("rdv_2_cale", "rdv_2_fait", "devis_envoye") else 1
-    cid = M.create_call(pid, call_number=call_number)
-    M.create_activity(pid, "call", f"Call {call_number} démarré")
+    cid = M.create_call(pid, call_number=call_number, user_id=current_user.id)
+    M.create_activity(pid, "call", f"Call {call_number} démarré", user_id=current_user.id)
     return redirect(url_for("call_briefing", pid=pid, cid=cid))
 
 
@@ -304,11 +315,13 @@ def api_call_complete(cid):
             pid, "stage_change",
             f"Stage : {STAGE_LABELS.get(prev['stage'], prev['stage'])} → {STAGE_LABELS.get(new_stage, new_stage)}",
             f"Suite à call #{call['call_number']} — statut : {statut}",
+            user_id=current_user.id,
         )
 
     M.create_activity(pid, "call",
                       f"Call {call['call_number']} terminé — {statut or 'sans statut'}",
-                      summary)
+                      summary,
+                      user_id=current_user.id)
 
     # Auto-create next action activity if RDV 2 calé
     if rdv2_date and new_stage == "rdv_2_cale":
@@ -316,7 +329,8 @@ def api_call_complete(cid):
             due = datetime.fromisoformat(f"{rdv2_date}T{rdv2_heure or '10:00'}:00")
             M.create_activity(pid, "meeting", f"RDV 2 — {p_name(pid)}",
                               f"Visio Calendly à {rdv2_heure or '10:00'}",
-                              due_at=due.isoformat())
+                              due_at=due.isoformat(),
+                              user_id=current_user.id)
         except Exception:
             pass
 
@@ -345,9 +359,10 @@ def api_audit(pid):
     from cold_call import audit_site
     audit = audit_site(p["site_url"])
     if audit.get("ok"):
-        M.save_audit(pid, audit)
+        M.save_audit(pid, audit, user_id=current_user.id)
         M.create_activity(pid, "audit", f"Audit site — {audit.get('security_grade', '?')}",
-                          f"Technos: {', '.join(audit.get('technos', []))}")
+                          f"Technos: {', '.join(audit.get('technos', []))}",
+                          user_id=current_user.id)
     return jsonify(audit)
 
 
@@ -370,7 +385,8 @@ def api_set_stage(pid):
         M.update_prospect(pid, {"stage": new_stage})
         M.create_activity(pid, "stage_change",
                           f"{STAGE_LABELS.get(prev['stage'])} → {STAGE_LABELS.get(new_stage)}",
-                          "Drag & drop kanban")
+                          "Drag & drop kanban",
+                          user_id=current_user.id)
     return jsonify({"ok": True})
 
 

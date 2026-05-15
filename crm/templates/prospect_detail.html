@@ -22,7 +22,10 @@
                 {% for a in activities %}
                     <div class="timeline-item type-{{ a.type }}">
                         <div class="head">
-                            <div class="title">{{ a.title or ACTIVITY_TYPES.get(a.type, [a.type])[0] }}</div>
+                            <div class="title">
+                                {% if a.author_name %}<b>{{ a.author_name }}</b> ·{% endif %}
+                                {{ a.title or ACTIVITY_TYPES.get(a.type, [a.type])[0] }}
+                            </div>
                             <div class="time">{{ a.created_at | relative }}</div>
                         </div>
                         {% if a.body %}<div class="body small">{{ a.body }}</div>{% endif %}

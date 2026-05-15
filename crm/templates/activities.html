@@ -39,6 +39,7 @@
                 <div class="timeline-item type-{{ a.type }}">
                     <div class="head">
                         <div class="title">
+                            {% if a.author_name %}<b>{{ a.author_name }}</b> ·{% endif %}
                             {{ a.title or ACTIVITY_TYPES.get(a.type, [a.type])[0] }}
                             {% if a.prospect_name %}
                                 · <a href="{{ url_for('prospect_detail', pid=a.prospect_id) }}">{{ a.prospect_name }}</a>

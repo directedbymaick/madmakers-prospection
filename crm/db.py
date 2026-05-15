@@ -1,31 +1,74 @@
-"""crm.db — SQLite connection helpers + auto-init."""
-import sqlite3
+"""crm.db — connection PostgreSQL (Supabase) avec helpers compatibles
+   l'ancien style SQLite (utilise '?' comme placeholder).
+
+   On garde le `?` partout dans les queries du codebase et on convertit
+   en `%s` au moment de l'exécution. Ça minimise les modifications dans
+   models.py et garde le code lisible.
+"""
+import os
+import logging
 from contextlib import contextmanager
-from .config import DB_PATH, SCHEMA_PATH
+
+import psycopg
+from psycopg.rows import dict_row
+
+from .config import SCHEMA_PATH
+
+log = logging.getLogger(__name__)
 
 
-def _row_factory(cursor, row):
-    """Return rows as dicts (column name → value)."""
-    return {col[0]: row[i] for i, col in enumerate(cursor.description)}
+def _database_url() -> str:
+    url = os.getenv("DATABASE_URL")
+    if not url:
+        raise RuntimeError(
+            "DATABASE_URL non défini dans .env. "
+            "Récupère-le depuis Supabase Dashboard → Connect → Session Pooler."
+        )
+    return url
+
+
+def _qmarks_to_pyformat(sql: str) -> str:
+    """Remplace les '?' SQLite par '%s' Postgres, en ignorant ceux dans les strings."""
+    if "?" not in sql:
+        return sql
+    out = []
+    in_str = None  # None, "'" ou '"'
+    i = 0
+    while i < len(sql):
+        c = sql[i]
+        if in_str:
+            out.append(c)
+            if c == in_str:
+                # check escape (SQL doubles le quote pour échapper)
+                if i + 1 < len(sql) and sql[i + 1] == in_str:
+                    out.append(sql[i + 1])
+                    i += 2
+                    continue
+                in_str = None
+            i += 1
+            continue
+        if c in ("'", '"'):
+            in_str = c
+            out.append(c)
+            i += 1
+            continue
+        if c == "?":
+            out.append("%s")
+            i += 1
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
 
 
 def get_conn():
-    """Get a SQLite connection with FK enabled and dict rows.
-
-    Note : pas de PARSE_DECLTYPES — on stocke les timestamps en strings ISO
-    (format Python `datetime.isoformat()` avec T, ou date-only "YYYY-MM-DD")
-    et on les reformate côté Jinja via les filtres dt/d/relative.
-    """
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = _row_factory
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+    """Get a psycopg connection avec dict rows."""
+    return psycopg.connect(_database_url(), row_factory=dict_row, connect_timeout=15)
 
 
 @contextmanager
 def cursor():
-    """Context manager: yields cursor + commits on exit, rolls back on error."""
+    """Context manager : yields cursor + commits on exit, rolls back on error."""
     conn = get_conn()
     try:
         cur = conn.cursor()
@@ -39,36 +82,41 @@ def cursor():
 
 
 def init_db():
-    """Apply schema.sql to create tables if not exist + run pending migrations."""
+    """Apply schema.sql to create tables if not exist + run migrations."""
     sql = SCHEMA_PATH.read_text(encoding="utf-8")
     conn = get_conn()
     try:
-        conn.executescript(sql)
-        # Migrations in-place pour DB déjà créée
-        _run_migrations(conn)
+        with conn.cursor() as cur:
+            cur.execute(sql)
+            _run_migrations(cur)
         conn.commit()
+        log.info("Schema appliqué.")
     finally:
         conn.close()
 
 
-def _run_migrations(conn):
-    """ALTER TABLE idempotent pour ajouter colonnes manquantes."""
-    cur = conn.cursor()
-    cur.execute("PRAGMA table_info(prospects)")
-    # row_factory returns dicts → utilise la clé "name"
-    existing_cols = {r["name"] for r in cur.fetchall()}
+def _run_migrations(cur):
+    """ALTER TABLE idempotent pour ajouter colonnes manquantes sur DB existante."""
+    # created_by_user_id sur activities, calls, audits, emails
     additions = [
-        ("phone_mobile",  "TEXT"),
-        ("phone_office",  "TEXT"),
-        ("phone_other",   "TEXT"),
+        ("activities", "created_by_user_id", "BIGINT REFERENCES users(id) ON DELETE SET NULL"),
+        ("calls",      "created_by_user_id", "BIGINT REFERENCES users(id) ON DELETE SET NULL"),
+        ("audits",     "created_by_user_id", "BIGINT REFERENCES users(id) ON DELETE SET NULL"),
+        ("emails",     "created_by_user_id", "BIGINT REFERENCES users(id) ON DELETE SET NULL"),
     ]
-    for col, typ in additions:
-        if col not in existing_cols:
-            cur.execute(f"ALTER TABLE prospects ADD COLUMN {col} {typ}")
+    for tbl, col, typ in additions:
+        cur.execute(f"""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_schema='public' AND table_name=%s AND column_name=%s
+        """, (tbl, col))
+        if not cur.fetchone():
+            cur.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {typ}")
+            log.info(f"Migration : {tbl}.{col} ajouté")
 
 
 def query(sql, params=()):
     """Run SELECT, return list of dicts."""
+    sql = _qmarks_to_pyformat(sql)
     with cursor() as cur:
         cur.execute(sql, params)
         return cur.fetchall()
@@ -81,14 +129,27 @@ def query_one(sql, params=()):
 
 
 def execute(sql, params=()):
-    """Run INSERT/UPDATE/DELETE, return lastrowid."""
+    """Run INSERT/UPDATE/DELETE. Pour INSERT, retourne l'id (si la query
+    contient déjà RETURNING id, sinon ajoute-le automatiquement)."""
+    sql = _qmarks_to_pyformat(sql).rstrip().rstrip(";")
+    sql_upper = sql.upper().lstrip()
+    is_insert = sql_upper.startswith("INSERT")
+    has_returning = "RETURNING" in sql_upper
+
+    if is_insert and not has_returning:
+        sql = sql + " RETURNING id"
+
     with cursor() as cur:
         cur.execute(sql, params)
-        return cur.lastrowid
+        if is_insert:
+            row = cur.fetchone()
+            return row["id"] if row else None
+        return cur.rowcount
 
 
 def execute_many(sql, params_list):
     """Bulk insert/update."""
+    sql = _qmarks_to_pyformat(sql)
     with cursor() as cur:
         cur.executemany(sql, params_list)
         return cur.rowcount

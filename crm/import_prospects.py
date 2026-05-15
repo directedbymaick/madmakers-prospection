@@ -34,13 +34,9 @@ def import_csv(csv_path: Path, reset: bool = False):
     if reset:
         from .db import cursor
         with cursor() as c:
-            c.execute("DELETE FROM emails")
-            c.execute("DELETE FROM activities")
-            c.execute("DELETE FROM calls")
-            c.execute("DELETE FROM audits")
-            c.execute("DELETE FROM prospects")
-            c.execute("DELETE FROM sqlite_sequence")
-        print("RESET : toutes les tables vidées.")
+            # TRUNCATE CASCADE Postgres (préserve users)
+            c.execute("TRUNCATE TABLE emails, activities, calls, audits, prospects RESTART IDENTITY CASCADE")
+        print("RESET : tables prospects/audits/calls/activities/emails vidées (users préservés).")
 
     with open(csv_path, encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
