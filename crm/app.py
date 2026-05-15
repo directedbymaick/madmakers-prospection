@@ -848,39 +848,218 @@ def api_campaign_update(cid):
     return jsonify({"ok": True})
 
 
+def _normalize_step_payload(payload: dict) -> dict:
+    """Convertit empty strings → None pour custom_subject/body/template_id
+    afin que COALESCE fasse correctement le fallback au template."""
+    out = {}
+    if "step_number" in payload:
+        try: out["step_number"] = int(payload["step_number"])
+        except (TypeError, ValueError): pass
+    if "delay_days" in payload:
+        try: out["delay_days"] = int(payload["delay_days"] or 0)
+        except (TypeError, ValueError): out["delay_days"] = 0
+    if "delay_hours" in payload:
+        try: out["delay_hours"] = int(payload["delay_hours"] or 0)
+        except (TypeError, ValueError): out["delay_hours"] = 0
+    if "template_id" in payload:
+        v = payload["template_id"]
+        if v in (None, "", "null"):
+            out["template_id"] = None
+        else:
+            try: out["template_id"] = int(v)
+            except (TypeError, ValueError): out["template_id"] = None
+    if "custom_subject" in payload:
+        v = (payload["custom_subject"] or "").strip()
+        out["custom_subject"] = v or None
+    if "custom_body" in payload:
+        v = (payload["custom_body"] or "").strip()
+        out["custom_body"] = v or None
+    return out
+
+
 @app.route("/api/campaigns/<int:cid>/steps", methods=["POST"])
 def api_campaign_add_step(cid):
     from . import campaigns as CMP
     payload = request.get_json(silent=True) or {}
-    step_number = int(payload.get("step_number") or 1)
-    delay_days = int(payload.get("delay_days") or 0)
-    delay_hours = int(payload.get("delay_hours") or 0)
-    template_id = payload.get("template_id")
-    if template_id:
-        try:
-            template_id = int(template_id)
-        except (TypeError, ValueError):
-            template_id = None
-    custom_subject = payload.get("custom_subject")
-    custom_body = payload.get("custom_body")
-    sid = CMP.add_step(cid, step_number=step_number, delay_days=delay_days,
-                       delay_hours=delay_hours, template_id=template_id,
-                       custom_subject=custom_subject, custom_body=custom_body)
+    norm = _normalize_step_payload(payload)
+    sid = CMP.add_step(
+        cid,
+        step_number=norm.get("step_number") or 1,
+        delay_days=norm.get("delay_days") or 0,
+        delay_hours=norm.get("delay_hours") or 0,
+        template_id=norm.get("template_id"),
+        custom_subject=norm.get("custom_subject"),
+        custom_body=norm.get("custom_body"),
+    )
     return jsonify({"ok": True, "id": sid})
 
 
-@app.route("/api/campaigns/steps/<int:step_id>", methods=["POST", "DELETE"])
+@app.route("/api/campaigns/steps/<int:step_id>", methods=["GET", "POST", "DELETE"])
 def api_campaign_step_edit(step_id):
     from . import campaigns as CMP
     if request.method == "DELETE":
         CMP.delete_step(step_id)
         return jsonify({"ok": True})
+
+    if request.method == "GET":
+        # Récupère la step pour pré-remplir le formulaire d'édition
+        step = M.query_one(
+            """SELECT s.*, t.name AS template_name
+               FROM campaign_steps s
+               LEFT JOIN email_templates t ON t.id = s.template_id
+               WHERE s.id = ?""",
+            (step_id,),
+        )
+        if not step:
+            return jsonify({"error": "not_found"}), 404
+        return jsonify(step)
+
     payload = request.get_json(silent=True) or {}
-    fields = {k: v for k, v in payload.items()
-              if k in {"step_number", "delay_days", "delay_hours",
-                       "template_id", "custom_subject", "custom_body"}}
-    CMP.update_step(step_id, **fields)
+    norm = _normalize_step_payload(payload)
+    CMP.update_step(step_id, **norm)
     return jsonify({"ok": True})
+
+
+@app.route("/api/campaigns/<int:cid>/steps/<int:step_id>/details", methods=["GET"])
+def api_campaign_step_details(cid, step_id):
+    """Détail complet d'une step : preview rendered + liste des envois (programmés + faits).
+
+    Returns:
+      step: {id, step_number, delay_days, delay_hours, template_name, subject, body_html}
+      from: {email, name, reply_to}
+      schedule: {reference_label, base_iso (started_at OR null), delta_seconds}
+      sample_target: {prospect: {...}, scheduled_at_iso, rendered: {subject, body_html}}
+      emails: [{prospect_name, to_email, scheduled_at, sent_at, status, error}]
+      stats: {scheduled, sent, failed, blocked, total_targets}
+    """
+    from . import email_sender as ES
+    from datetime import timezone, timedelta
+
+    c = M.query_one("SELECT * FROM campaigns WHERE id = ?", (cid,))
+    if not c:
+        return jsonify({"error": "campaign_not_found"}), 404
+    step = M.query_one(
+        """SELECT s.*, t.name AS template_name,
+                  COALESCE(NULLIF(s.custom_subject, ''), t.subject)   AS final_subject,
+                  COALESCE(NULLIF(s.custom_body, ''),    t.body_html) AS final_body
+           FROM campaign_steps s
+           LEFT JOIN email_templates t ON t.id = s.template_id
+           WHERE s.id = ? AND s.campaign_id = ?""",
+        (step_id, cid),
+    )
+    if not step:
+        return jsonify({"error": "step_not_found"}), 404
+
+    # From email logic (signataire de la campagne)
+    signer = None
+    if c.get("from_user_id"):
+        signer = M.query_one("SELECT email, full_name FROM users WHERE id = ?",
+                             (c["from_user_id"],))
+    if not signer:
+        signer = {"email": current_user.email, "full_name": current_user.full_name}
+    from_email, from_name, reply_to = ES.resolve_from_email(
+        signer["email"], signer.get("full_name") or "")
+
+    # Schedule reference : started_at (si lancée) ou placeholder "Sera basé sur le lancement"
+    started_at_iso = c.get("started_at")
+    delta_seconds = (step["delay_days"] or 0) * 86400 + (step["delay_hours"] or 0) * 3600
+
+    # Liste des emails pour cette step (1 par target)
+    emails = M.query(
+        """SELECT e.id, e.prospect_id, e.to_email, e.scheduled_at, e.sent_at,
+                  e.status, e.error_message,
+                  p.nom_complet, p.entreprise, p.email AS prospect_email
+           FROM emails e
+           JOIN prospects p ON p.id = e.prospect_id
+           WHERE e.campaign_id = ? AND e.campaign_step_id = ?
+           ORDER BY COALESCE(e.scheduled_at, e.created_at) ASC""",
+        (cid, step_id),
+    )
+
+    # Stats par statut
+    stats = {"scheduled": 0, "sent": 0, "failed": 0, "blocked_rgpd": 0}
+    for e in emails:
+        if e["status"] == "scheduled": stats["scheduled"] += 1
+        elif e["status"] == "sent":    stats["sent"] += 1
+        elif e["status"] == "failed":
+            if (e.get("error_message") or "") == "unsubscribed":
+                stats["blocked_rgpd"] += 1
+            else:
+                stats["failed"] += 1
+
+    targets_count = M.query_one(
+        "SELECT COUNT(*) AS n FROM campaign_targets WHERE campaign_id = ?", (cid,)
+    )["n"]
+    stats["total_targets"] = targets_count
+    stats["pending"] = max(0, targets_count - len(emails))
+
+    # Sample target pour preview rendered
+    sample = None
+    sample_row = M.query_one(
+        """SELECT ct.*, p.id AS p_id, p.nom_complet, p.prenom, p.nom, p.titre,
+                  p.entreprise, p.ville, p.email, p.site_url, p.linkedin_url, p.categorie
+           FROM campaign_targets ct
+           JOIN prospects p ON p.id = ct.prospect_id
+           WHERE ct.campaign_id = ?
+           ORDER BY ct.started_at ASC LIMIT 1""",
+        (cid,),
+    )
+    if sample_row:
+        prospect_dict = {
+            "id":           sample_row["p_id"],
+            "prenom":       sample_row["prenom"],
+            "nom":          sample_row["nom"],
+            "nom_complet":  sample_row["nom_complet"],
+            "titre":        sample_row["titre"],
+            "entreprise":   sample_row["entreprise"],
+            "ville":        sample_row["ville"],
+            "email":        sample_row["email"],
+            "site_url":     sample_row["site_url"],
+            "linkedin_url": sample_row["linkedin_url"],
+            "categorie":    sample_row["categorie"],
+        }
+        user_dict = {"email": signer["email"], "full_name": signer.get("full_name") or ""}
+        rendered = M.render_template_for_prospect(
+            {"subject": step["final_subject"], "body_html": step["final_body"]},
+            prospect_dict, user_dict,
+        )
+        # Date estimée pour ce sample
+        scheduled_for_sample = None
+        if started_at_iso:
+            try:
+                base = datetime.fromisoformat(started_at_iso.replace("Z", "+00:00"))
+                if base.tzinfo is None:
+                    base = base.replace(tzinfo=timezone.utc)
+                scheduled_for_sample = (base + timedelta(seconds=delta_seconds)).isoformat()
+            except Exception:
+                pass
+        sample = {
+            "prospect":      prospect_dict,
+            "scheduled_at":  scheduled_for_sample,
+            "rendered":      rendered,
+        }
+
+    return jsonify({
+        "step": {
+            "id":            step["id"],
+            "step_number":   step["step_number"],
+            "delay_days":    step["delay_days"],
+            "delay_hours":   step["delay_hours"],
+            "template_id":   step["template_id"],
+            "template_name": step.get("template_name"),
+            "subject":       step["final_subject"],
+            "body_html":     step["final_body"],
+        },
+        "from": {"email": from_email, "name": from_name, "reply_to": reply_to},
+        "schedule": {
+            "campaign_status":  c["status"],
+            "started_at":       started_at_iso,
+            "delta_seconds":    delta_seconds,
+        },
+        "sample":  sample,
+        "emails":  emails,
+        "stats":   stats,
+    })
 
 
 @app.route("/api/campaigns/<int:cid>/assign", methods=["POST"])

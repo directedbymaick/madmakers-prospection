@@ -59,7 +59,7 @@
         {% if campaign.steps %}
         <div class="steps-list">
             {% for s in campaign.steps %}
-            <div class="step-card">
+            <div class="step-card" onclick="openStepDetail({{ s.id }})" title="Voir les détails de cette étape">
                 <div class="step-num">{{ s.step_number }}</div>
                 <div class="step-body">
                     <div class="step-meta">
@@ -79,7 +79,11 @@
                         {% endif %}
                     </div>
                 </div>
-                <button class="btn btn-sm btn-danger" onclick="deleteStep({{ s.id }})">🗑</button>
+                <div class="step-actions" onclick="event.stopPropagation()">
+                    <button class="btn btn-sm" onclick="openStepDetail({{ s.id }})">👁 Détails</button>
+                    <button class="btn btn-sm" onclick="openStepEditModal({{ s.id }})">✎ Éditer</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteStep({{ s.id }})">🗑</button>
+                </div>
             </div>
             {% endfor %}
         </div>
@@ -359,14 +363,128 @@
     </div>
 </div>
 
-<!-- ═══ Modal : ajouter étape ═══ -->
+<!-- ═══ Modal : détail step (preview email + envois) ═══ -->
+<div class="modal-backdrop" id="step-detail-modal" hidden>
+    <div class="modal modal-wide">
+        <div class="modal-header">
+            <h2 id="sd-title">Étape — Détails</h2>
+            <button class="modal-close" onclick="closeStepDetail()">×</button>
+        </div>
+
+        <div id="sd-loading" style="padding: 80px; text-align: center; color: var(--fg-mute)">
+            <div style="font-size: 24px;">⏳</div>
+            Chargement des détails...
+        </div>
+
+        <div id="sd-body" hidden>
+
+            <!-- ═══ Bandeau infos step ═══ -->
+            <div class="sd-meta-grid">
+                <div class="sd-meta-cell">
+                    <div class="sd-meta-lab">Étape</div>
+                    <div class="sd-meta-val" id="sd-step-num">—</div>
+                </div>
+                <div class="sd-meta-cell">
+                    <div class="sd-meta-lab">Délai depuis lancement</div>
+                    <div class="sd-meta-val" id="sd-delay">—</div>
+                </div>
+                <div class="sd-meta-cell">
+                    <div class="sd-meta-lab">Date d'envoi (sample)</div>
+                    <div class="sd-meta-val" id="sd-scheduled">—</div>
+                </div>
+                <div class="sd-meta-cell">
+                    <div class="sd-meta-lab">Template</div>
+                    <div class="sd-meta-val" id="sd-tpl">—</div>
+                </div>
+            </div>
+
+            <!-- ═══ Stats envois ═══ -->
+            <div class="sd-stats">
+                <div class="sd-stat-pill"><b id="sd-stat-total">0</b> targets total</div>
+                <div class="sd-stat-pill sent"><b id="sd-stat-sent">0</b> ✓ envoyés</div>
+                <div class="sd-stat-pill scheduled"><b id="sd-stat-scheduled">0</b> ⏳ programmés</div>
+                <div class="sd-stat-pill pending"><b id="sd-stat-pending">0</b> ⋯ en attente</div>
+                <div class="sd-stat-pill failed"><b id="sd-stat-failed">0</b> ✗ échecs</div>
+                <div class="sd-stat-pill rgpd"><b id="sd-stat-rgpd">0</b> ⊘ RGPD</div>
+            </div>
+
+            <!-- ═══ Preview email rendered ═══ -->
+            <h3 class="sd-sect-title">📧 Aperçu de l'email tel qu'il sera envoyé</h3>
+            <p class="muted small" id="sd-sample-hint">Aperçu avec les variables remplies pour le premier prospect de la campagne.</p>
+
+            <div class="email-preview">
+                <div class="ep-header">
+                    <div class="ep-row">
+                        <span class="ep-lab">De</span>
+                        <span class="ep-val" id="sd-from">—</span>
+                    </div>
+                    <div class="ep-row">
+                        <span class="ep-lab">À</span>
+                        <span class="ep-val" id="sd-to">—</span>
+                    </div>
+                    <div class="ep-row">
+                        <span class="ep-lab">Reply-To</span>
+                        <span class="ep-val muted" id="sd-replyto">—</span>
+                    </div>
+                    <div class="ep-row">
+                        <span class="ep-lab">Date d'envoi</span>
+                        <span class="ep-val" id="sd-when">—</span>
+                    </div>
+                    <div class="ep-row">
+                        <span class="ep-lab">Objet</span>
+                        <span class="ep-val ep-subject" id="sd-subject">—</span>
+                    </div>
+                    <div class="ep-row">
+                        <span class="ep-lab">Pièces jointes</span>
+                        <span class="ep-val muted small">Pas de pièce jointe (à venir pour les campagnes)</span>
+                    </div>
+                </div>
+
+                <div class="ep-body" id="sd-body-rendered">—</div>
+
+                <div class="ep-footer-rgpd">
+                    <small>📜 <b>Footer RGPD ajouté automatiquement à l'envoi</b> :<br>
+                    « Vous recevez cet email parce que vos coordonnées professionnelles sont listées publiquement (LinkedIn / annuaires). Si cela ne vous intéresse pas, vous pouvez vous désabonner ici : <a href="#">Se désabonner de toute communication Mad Makers</a> · Mad Makers · contact@mad-makers.fr · mad-makers.fr »</small>
+                </div>
+            </div>
+
+            <!-- ═══ Table envois ═══ -->
+            <h3 class="sd-sect-title">📤 État des envois pour cette étape</h3>
+            <div class="sd-emails-wrap">
+                <table class="preview-table" id="sd-emails-table">
+                    <thead>
+                        <tr>
+                            <th>Prospect</th>
+                            <th>Entreprise</th>
+                            <th>À</th>
+                            <th>Date programmée</th>
+                            <th>Date envoi</th>
+                            <th>Statut</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sd-emails-tbody">
+                        <tr><td colspan="6" class="empty small">—</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div style="padding: 14px 22px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 10px;">
+                <button class="btn" onclick="closeStepDetail()">Fermer</button>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- ═══ Modal : ajouter / éditer étape ═══ -->
 <div class="modal-backdrop" id="step-modal" hidden>
     <div class="modal">
         <div class="modal-header">
-            <h2>+ Nouvelle étape</h2>
+            <h2 id="step-modal-title">+ Nouvelle étape</h2>
             <button class="modal-close" onclick="closeStepModal()">×</button>
         </div>
-        <form id="step-form" onsubmit="return addStep(event, {{ campaign.id }})" style="padding: 18px 22px">
+        <form id="step-form" onsubmit="return saveStep(event, {{ campaign.id }})" style="padding: 18px 22px">
+            <input type="hidden" name="step_id" value="">
             <div class="form-grid">
                 <label>N° d'étape
                     <input type="number" name="step_number" min="1" value="{{ campaign.steps|length + 1 }}" required>
@@ -385,16 +503,16 @@
                         {% endfor %}
                     </select>
                 </label>
-                <label class="span-2">Objet custom (si pas de template)
+                <label class="span-2">Objet custom <span class="muted small">(override template — laisser vide pour utiliser le template)</span>
                     <input type="text" name="custom_subject"
                            placeholder="Si vide, prend l'objet du template choisi">
                 </label>
-                <label class="span-2">Corps custom HTML (si pas de template)
-                    <textarea name="custom_body" rows="6"
+                <label class="span-2">Corps custom HTML <span class="muted small">(override template — laisser vide pour utiliser le template)</span>
+                    <textarea name="custom_body" rows="8"
                               placeholder="Si vide, prend le corps du template choisi"></textarea>
                 </label>
                 <div class="span-2 row gap-2">
-                    <button type="submit" class="btn btn-accent">Ajouter l'étape</button>
+                    <button type="submit" class="btn btn-accent" id="step-form-submit">Ajouter l'étape</button>
                     <button type="button" class="btn" onclick="closeStepModal()">Annuler</button>
                 </div>
             </div>
@@ -412,7 +530,10 @@
     padding: 12px 14px;
     background: var(--bg-3); border: 1px solid var(--line);
     border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: border-color 0.15s ease, transform 0.1s ease;
 }
+.step-card:hover { border-color: var(--lime); }
 .step-num {
     width: 36px; height: 36px;
     background: var(--lime); color: var(--ink);
@@ -424,33 +545,219 @@
 .step-body { flex: 1; }
 .step-meta { font-family: var(--label); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--lime); margin-bottom: 2px; }
 .step-tpl { font-size: 13px; color: var(--cream); }
+.step-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+/* ── Step detail modal ─────────────────────────────────── */
+.sd-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    padding: 18px 22px;
+    border-bottom: 1px solid var(--line);
+}
+.sd-meta-cell {
+    background: var(--bg-3);
+    border: 1px solid var(--line);
+    padding: 10px 14px;
+    border-radius: var(--radius-sm);
+}
+.sd-meta-lab {
+    font-family: var(--label);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--fg-dim);
+    font-weight: 600;
+}
+.sd-meta-val {
+    margin-top: 4px;
+    font-family: var(--display);
+    font-size: 17px;
+    color: var(--cream);
+    font-weight: 400;
+    letter-spacing: -0.01em;
+}
+
+.sd-stats {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    padding: 14px 22px;
+    border-bottom: 1px solid var(--line);
+    background: var(--bg-2);
+}
+.sd-stat-pill {
+    background: var(--bg-3);
+    border: 1px solid var(--line);
+    padding: 6px 12px;
+    border-radius: 99px;
+    font-size: 12px;
+    color: var(--fg-dim);
+    font-family: var(--mono);
+    letter-spacing: 0.02em;
+}
+.sd-stat-pill b { color: var(--cream); font-weight: 700; margin-right: 4px; }
+.sd-stat-pill.sent { background: rgba(34,197,94,0.10); border-color: rgba(34,197,94,0.30); color: #c8fcae; }
+.sd-stat-pill.sent b { color: var(--lime); }
+.sd-stat-pill.scheduled { background: rgba(245,158,11,0.10); border-color: rgba(245,158,11,0.30); color: #ffe1a8; }
+.sd-stat-pill.scheduled b { color: #f59e0b; }
+.sd-stat-pill.pending { background: var(--bg-3); }
+.sd-stat-pill.failed { background: rgba(239,68,68,0.10); border-color: rgba(239,68,68,0.30); color: #ffc4c4; }
+.sd-stat-pill.failed b { color: var(--red); }
+.sd-stat-pill.rgpd { background: rgba(139,92,246,0.10); border-color: rgba(139,92,246,0.30); color: #d4c2fc; }
+.sd-stat-pill.rgpd b { color: var(--purple); }
+
+.sd-sect-title {
+    padding: 18px 22px 8px;
+    margin: 0;
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: 17px;
+    color: var(--cream);
+    text-transform: none;
+    letter-spacing: -0.01em;
+}
+
+/* Email preview */
+.email-preview {
+    margin: 0 22px 22px;
+    background: white;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    color: var(--ink);
+}
+.ep-header {
+    background: #f1ece0;
+    padding: 14px 18px;
+    border-bottom: 1px solid #d8d4c8;
+}
+.ep-row {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 12px;
+    padding: 4px 0;
+    font-size: 13px;
+    align-items: baseline;
+}
+.ep-lab {
+    font-family: 'Inter', sans-serif;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #6b6a62;
+    font-weight: 600;
+}
+.ep-val { color: #0c0d0a; word-break: break-word; }
+.ep-val.muted { color: #6b6a62; }
+.ep-val.ep-subject {
+    font-family: 'Playfair Display', serif;
+    font-size: 18px;
+    font-weight: 400;
+    color: #0c0d0a;
+    line-height: 1.3;
+}
+.ep-body {
+    padding: 22px 26px;
+    background: white;
+    color: #0c0d0a;
+    font-family: 'Inter', Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.65;
+    max-height: 400px;
+    overflow-y: auto;
+}
+.ep-body p { margin: 0 0 12px; }
+.ep-body a { color: #1d4ed8; }
+.ep-body b { color: #0c0d0a; }
+.ep-footer-rgpd {
+    background: #f1ece0;
+    padding: 12px 18px;
+    border-top: 1px dashed #b8b3a4;
+    font-size: 11px;
+    color: #6b6a62;
+    line-height: 1.5;
+}
+.ep-footer-rgpd small { display: block; }
+.ep-footer-rgpd a { color: #6b6a62; text-decoration: underline; }
+
+.sd-emails-wrap {
+    margin: 0 22px 18px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    max-height: 320px;
+    overflow-y: auto;
+}
+.sd-emails-wrap .preview-table {
+    background: var(--bg-3);
+}
 </style>
 
 <script>
 function openStepModal() {
+    // Mode CRÉATION
+    document.getElementById('step-modal-title').textContent = '+ Nouvelle étape';
+    document.getElementById('step-form-submit').textContent = 'Ajouter l\'étape';
+    const form = document.getElementById('step-form');
+    form.reset();
+    form.querySelector('[name="step_id"]').value = '';
+    form.querySelector('[name="step_number"]').value = {{ campaign.steps|length + 1 }};
+    form.querySelector('[name="delay_days"]').value = 0;
     document.getElementById('step-modal').hidden = false;
 }
+
+async function openStepEditModal(sid) {
+    // Mode ÉDITION : pré-remplit depuis la DB
+    try {
+        const r = await fetch(`/api/campaigns/steps/${sid}`);
+        const step = await r.json();
+        if (step.error) { showToast('Erreur : ' + step.error); return; }
+
+        document.getElementById('step-modal-title').textContent = `✎ Éditer l'étape ${step.step_number}`;
+        document.getElementById('step-form-submit').textContent = 'Mettre à jour';
+
+        const form = document.getElementById('step-form');
+        form.querySelector('[name="step_id"]').value = step.id;
+        form.querySelector('[name="step_number"]').value = step.step_number;
+        form.querySelector('[name="delay_days"]').value = step.delay_days || 0;
+        form.querySelector('[name="template_id"]').value = step.template_id || '';
+        form.querySelector('[name="custom_subject"]').value = step.custom_subject || '';
+        form.querySelector('[name="custom_body"]').value = step.custom_body || '';
+
+        document.getElementById('step-modal').hidden = false;
+    } catch (e) {
+        showToast('Erreur réseau');
+    }
+}
+
 function closeStepModal() {
     document.getElementById('step-modal').hidden = true;
 }
 
-async function addStep(e, cid) {
+async function saveStep(e, cid) {
     e.preventDefault();
     const fd = new FormData(e.target);
     const data = Object.fromEntries(fd.entries());
+    const stepId = data.step_id;
+    delete data.step_id;
+
     // Cast numbers
     data.step_number = parseInt(data.step_number);
     data.delay_days = parseInt(data.delay_days);
     if (data.template_id) data.template_id = parseInt(data.template_id);
     else delete data.template_id;
+
+    // Mode : édition si stepId présent, sinon création
+    const url = stepId
+        ? `/api/campaigns/steps/${stepId}`
+        : `/api/campaigns/${cid}/steps`;
+
     try {
-        const r = await fetch(`/api/campaigns/${cid}/steps`, {
+        const r = await fetch(url, {
             method: 'POST', headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(data),
         });
         const out = await r.json();
         if (out.ok) {
-            showToast('Étape ajoutée');
+            showToast(stepId ? 'Étape mise à jour' : 'Étape ajoutée');
             setTimeout(() => location.reload(), 400);
         } else {
             showToast('Erreur : ' + (out.message || out.error));
@@ -466,6 +773,132 @@ async function deleteStep(sid) {
     const r = await fetch(`/api/campaigns/steps/${sid}`, {method: 'DELETE'});
     if (r.ok) location.reload();
 }
+
+// ─── Step detail modal ──────────────────────────────────────
+async function openStepDetail(sid) {
+    const modal = document.getElementById('step-detail-modal');
+    document.getElementById('sd-loading').hidden = false;
+    document.getElementById('sd-body').hidden = true;
+    modal.hidden = false;
+    document.body.style.overflow = 'hidden';
+
+    try {
+        const r = await fetch(`/api/campaigns/${CAMPAIGN_ID}/steps/${sid}/details`);
+        const data = await r.json();
+        if (data.error) {
+            showToast('Erreur : ' + data.error);
+            return;
+        }
+        renderStepDetail(data);
+    } catch (e) {
+        showToast('Erreur réseau');
+    }
+}
+
+function closeStepDetail() {
+    document.getElementById('step-detail-modal').hidden = true;
+    document.body.style.overflow = '';
+}
+
+function renderStepDetail(data) {
+    const step = data.step;
+    const from = data.from;
+    const sched = data.schedule;
+    const sample = data.sample;
+    const stats = data.stats;
+
+    // Title + meta
+    document.getElementById('sd-title').textContent = `Étape ${step.step_number} — Détails`;
+    document.getElementById('sd-step-num').textContent = `Step ${step.step_number}`;
+
+    const dd = step.delay_days || 0, dh = step.delay_hours || 0;
+    let delayLabel;
+    if (dd === 0 && dh === 0) delayLabel = 'J0 (envoi immédiat au lancement)';
+    else if (dh === 0)         delayLabel = `J+${dd} jours`;
+    else if (dd === 0)         delayLabel = `+${dh}h`;
+    else                       delayLabel = `J+${dd} jours +${dh}h`;
+    document.getElementById('sd-delay').textContent = delayLabel;
+
+    document.getElementById('sd-tpl').textContent = step.template_name || '(custom — pas de template)';
+
+    // Scheduled at (sample)
+    let schedLabel = '—';
+    if (sample && sample.scheduled_at) {
+        const d = new Date(sample.scheduled_at);
+        schedLabel = d.toLocaleString('fr-FR', {dateStyle: 'medium', timeStyle: 'short'});
+    } else if (sched.campaign_status === 'draft') {
+        schedLabel = `Calculé au lancement (${delayLabel})`;
+    }
+    document.getElementById('sd-scheduled').textContent = schedLabel;
+    document.getElementById('sd-when').textContent = schedLabel;
+
+    // Stats
+    document.getElementById('sd-stat-total').textContent     = stats.total_targets || 0;
+    document.getElementById('sd-stat-sent').textContent      = stats.sent || 0;
+    document.getElementById('sd-stat-scheduled').textContent = stats.scheduled || 0;
+    document.getElementById('sd-stat-pending').textContent   = stats.pending || 0;
+    document.getElementById('sd-stat-failed').textContent    = stats.failed || 0;
+    document.getElementById('sd-stat-rgpd').textContent      = stats.blocked_rgpd || 0;
+
+    // From / To preview
+    document.getElementById('sd-from').textContent = `${from.name} <${from.email}>`;
+    document.getElementById('sd-replyto').textContent = from.reply_to || '(idem from)';
+
+    if (sample) {
+        const p = sample.prospect;
+        document.getElementById('sd-to').textContent =
+            `${p.nom_complet || ''} <${p.email || '?'}>` +
+            (p.entreprise ? ` · ${p.entreprise}` : '');
+        document.getElementById('sd-subject').textContent = sample.rendered.subject || '(vide)';
+        document.getElementById('sd-body-rendered').innerHTML = sample.rendered.body_html || '<i class="muted">(vide)</i>';
+        document.getElementById('sd-sample-hint').textContent =
+            `Aperçu avec les variables remplies pour ${p.nom_complet} (${p.entreprise || '?'}) — premier prospect de la campagne.`;
+    } else {
+        document.getElementById('sd-to').textContent = '(aucun prospect assigné — ajoute des prospects pour voir le rendu)';
+        document.getElementById('sd-subject').textContent = step.subject;
+        document.getElementById('sd-body-rendered').innerHTML = step.body_html;
+        document.getElementById('sd-sample-hint').textContent =
+            'Aucun prospect assigné — affichage du template brut avec les variables {{xxx}} non remplies.';
+    }
+
+    // Table des envois
+    const tbody = document.getElementById('sd-emails-tbody');
+    if (!data.emails || data.emails.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty small">Aucun email programmé/envoyé pour cette étape. Lance la campagne pour programmer les envois.</td></tr>';
+    } else {
+        tbody.innerHTML = data.emails.map(e => {
+            const statusColors = {
+                'sent':      ['#16A34A', '✓ envoyé'],
+                'scheduled': ['#F59E0B', '⏳ programmé'],
+                'failed':    [(e.error_message === 'unsubscribed' ? '#6B7280' : '#EF4444'),
+                              (e.error_message === 'unsubscribed' ? '⊘ RGPD désabo' : '✗ échec')],
+                'draft':     ['#6B7280', 'brouillon'],
+                'opened':    ['#0EA5E9', '👁 ouvert'],
+                'replied':   ['#22C55E', '💬 répondu'],
+            };
+            const [color, label] = statusColors[e.status] || ['#6B7280', e.status];
+            const schedDate = e.scheduled_at ? new Date(e.scheduled_at).toLocaleString('fr-FR', {dateStyle:'short', timeStyle:'short'}) : '—';
+            const sentDate  = e.sent_at      ? new Date(e.sent_at).toLocaleString('fr-FR',      {dateStyle:'short', timeStyle:'short'}) : '—';
+            return `<tr>
+                <td><a href="/prospects/${e.prospect_id}" target="_blank">${escapeHtml(e.nom_complet || '')}</a></td>
+                <td class="small">${escapeHtml(e.entreprise || '')}</td>
+                <td class="mono small">${escapeHtml(e.to_email || e.prospect_email || '—')}</td>
+                <td class="small">${schedDate}</td>
+                <td class="small">${sentDate}</td>
+                <td><span class="stage-pill" style="background:${color}">${label}</span>
+                    ${e.error_message && e.error_message !== 'unsubscribed' ? `<div class="muted small" title="${escapeHtml(e.error_message)}">${escapeHtml(e.error_message.substring(0, 40))}…</div>` : ''}
+                </td>
+            </tr>`;
+        }).join('');
+    }
+
+    document.getElementById('sd-loading').hidden = true;
+    document.getElementById('sd-body').hidden = false;
+}
+
+document.getElementById('step-detail-modal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'step-detail-modal') closeStepDetail();
+});
 
 async function launchCampaign(cid) {
     if (!confirm("Lancer la campagne ?\n\nLes emails J0 partiront immédiatement à tous les prospects actifs.\nLes suivants selon le calendrier des étapes.")) return;
