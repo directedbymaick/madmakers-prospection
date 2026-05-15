@@ -189,6 +189,41 @@
 
 .preview-actions { display: flex; justify-content: flex-end; gap: 10px; }
 
+/* Import progress (live SSE) */
+.import-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.ip-stage {
+    font-family: var(--label);
+    font-size: 13px;
+    color: var(--cream);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+.ip-bar {
+    width: 100%;
+    height: 8px;
+    background: var(--bg-3);
+    border-radius: 99px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+}
+.ip-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--lime) 0%, #d4ff5e 100%);
+    border-radius: 99px;
+    transition: width 0.25s cubic-bezier(.2,.7,.2,1);
+    box-shadow: 0 0 12px rgba(200, 255, 61, 0.40);
+}
+.ip-counts {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--fg-dim);
+    letter-spacing: 0.04em;
+}
+
 .format-pill {
     display: inline-block;
     padding: 4px 10px;
@@ -324,30 +359,112 @@ async function confirmImport() {
     if (!_currentFile) return;
     const btn = document.getElementById('confirm-import-btn');
     btn.disabled = true; btn.textContent = '⏳ Import en cours...';
-    showStatus('loading', '⏳ Import en base...');
+
+    // Affiche la zone de progress streaming
+    statusBox.className = 'upload-status loading';
+    statusBox.hidden = false;
+    statusBox.innerHTML = `
+        <div class="import-progress" id="import-progress">
+            <div class="ip-stage" id="ip-stage">📄 Lecture du fichier...</div>
+            <div class="ip-bar"><div class="ip-bar-fill" id="ip-bar-fill" style="width:0%"></div></div>
+            <div class="ip-counts" id="ip-counts">—</div>
+        </div>
+    `;
 
     const fd = new FormData();
     fd.append('file', _currentFile);
-    fd.append('mode', 'import');
 
     try {
-        const r = await fetch('/api/imports/upload', {method: 'POST', body: fd});
-        const data = await r.json();
-        if (data.ok) {
-            const s = data.stats;
-            showStatus('success',
-                `✅ Import terminé : <b>${s.inserted}</b> nouveaux · <b>${s.updated}</b> mis à jour · ${s.skipped} skip · ${s.total} total<br>
-                <a href="/prospects" class="btn btn-sm mt-2">Voir les prospects →</a>`);
+        const response = await fetch('/api/imports/import-stream', {
+            method: 'POST', body: fd,
+        });
+
+        if (!response.body) {
+            throw new Error('Streaming non supporté par le navigateur');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        let finalStats = null;
+        let finalFormat = null;
+        let finalError = null;
+
+        while (true) {
+            const {done, value} = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, {stream: true});
+            const events = buffer.split('\n\n');
+            buffer = events.pop() || '';  // garde le partiel
+
+            for (const evt of events) {
+                if (!evt.trim() || !evt.startsWith('data: ')) continue;
+                try {
+                    const data = JSON.parse(evt.slice(6));
+                    handleImportEvent(data);
+                    if (data.stage === 'done') {
+                        finalStats = data.stats;
+                        finalFormat = data.format;
+                    }
+                    if (data.stage === 'error') {
+                        finalError = data.error;
+                    }
+                } catch (e) {
+                    console.warn('Bad SSE chunk:', evt);
+                }
+            }
+        }
+
+        if (finalError) {
+            statusBox.className = 'upload-status error';
+            statusBox.innerHTML = `❌ ${finalError}`;
+        } else if (finalStats) {
+            const s = finalStats;
+            statusBox.className = 'upload-status success';
+            statusBox.innerHTML = `
+                ✅ <b>Import terminé</b> en quelques secondes.<br>
+                <b>${s.inserted}</b> nouveaux · <b>${s.updated}</b> mis à jour · ${s.skipped} skip · ${s.total} total
+                <a href="/prospects" class="btn btn-sm mt-2" style="margin-left:12px">Voir les prospects →</a>`;
             previewBlock.hidden = true;
             _currentFile = null;
             fileInput.value = '';
-        } else {
-            showStatus('error', `❌ ${data.message || data.error}`);
         }
     } catch (e) {
-        showStatus('error', `❌ Erreur réseau : ${e.message}`);
+        statusBox.className = 'upload-status error';
+        statusBox.innerHTML = `❌ Erreur réseau : ${e.message}`;
     } finally {
         btn.disabled = false; btn.textContent = 'Confirmer l\'import';
+    }
+}
+
+function handleImportEvent(data) {
+    const stageEl = document.getElementById('ip-stage');
+    const barFill = document.getElementById('ip-bar-fill');
+    const countsEl = document.getElementById('ip-counts');
+    if (!stageEl) return;
+
+    if (data.stage === 'parsing') {
+        stageEl.textContent = `📄 ${data.msg || 'Lecture...'}`;
+        barFill.style.width = '8%';
+    } else if (data.stage === 'preparing') {
+        stageEl.textContent = `🔍 ${data.msg}`;
+        barFill.style.width = '14%';
+    } else if (data.stage === 'importing') {
+        const pct = (data.current / data.total) * 100;
+        const pctTotal = 14 + (pct * 0.86); // 14% → 100%
+        stageEl.textContent = `📥 Insertion : ${data.current} / ${data.total}`;
+        barFill.style.width = pctTotal.toFixed(1) + '%';
+        countsEl.innerHTML =
+            `<span style="color:var(--lime)">+${data.inserted} nouveaux</span> · ` +
+            `<span>${data.updated} mis à jour</span> · ` +
+            (data.skipped ? `<span class="muted">${data.skipped} ignoré${data.skipped>1?'s':''}</span>` : '');
+    } else if (data.stage === 'done') {
+        stageEl.textContent = `✅ Terminé`;
+        barFill.style.width = '100%';
+    } else if (data.stage === 'error') {
+        stageEl.textContent = `❌ Erreur : ${data.error}`;
     }
 }
 </script>

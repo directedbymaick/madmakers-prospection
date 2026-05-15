@@ -5,7 +5,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask, render_template, request, redirect, url_for, jsonify, abort
+from flask import (Flask, render_template, request, redirect, url_for,
+                   jsonify, abort, Response, stream_with_context)
 from flask_login import LoginManager, current_user
 
 # Charge .env AVANT d'importer modules qui en dépendent
@@ -776,15 +777,13 @@ def imports_view():
 
 @app.route("/api/imports/upload", methods=["POST"])
 def api_imports_upload():
-    """Upload file → parse → preview/import.
+    """Upload file → parse → preview JSON (rapide).
 
-    Modes :
-    - mode=preview : retourne {format, headers, row_count, sample (3 rows), extras}
-    - mode=import  : importe directement et retourne {inserted, updated, skipped}
+    Pour l'import effectif (qui peut être long sur 500+ rows), utiliser
+    /api/imports/import-stream qui streame le progress via SSE.
     """
     from . import importer as IMP
 
-    mode = request.form.get("mode") or "preview"
     f = request.files.get("file")
     if not f or not f.filename:
         return jsonify({"error": "no_file"}), 400
@@ -800,13 +799,6 @@ def api_imports_upload():
         return jsonify({"error": "parse_failed", "message": str(e)}), 500
 
     normalized = IMP.normalize_rows(parsed)
-
-    if mode == "import":
-        stats = IMP.import_to_db(normalized, user_id=current_user.id)
-        return jsonify({"ok": True, "stats": stats,
-                        "format": parsed["format"]})
-
-    # Preview mode
     sample = normalized[:5]
     extras = parsed.get("_extras") or {}
     return jsonify({
@@ -818,6 +810,106 @@ def api_imports_upload():
         "sample":      sample,
         "extras":      extras,
     })
+
+
+@app.route("/api/imports/import-stream", methods=["POST"])
+def api_imports_import_stream():
+    """Import streaming via Server-Sent Events.
+
+    Pendant l'import, émet régulièrement :
+      data: {"stage": "parsing", "msg": "Lecture du fichier..."}\\n\\n
+      data: {"stage": "preparing", "total": N, "msg": "..."}\\n\\n
+      data: {"stage": "importing", "current": i, "total": N, "inserted": x, "updated": y, "skipped": z}\\n\\n
+      data: {"stage": "done", "stats": {...}, "format": "..."}\\n\\n
+      data: {"stage": "error", "error": "..."}\\n\\n
+    """
+    from . import importer as IMP
+    from . import models as M
+    from .db import query_one
+    import json as _json
+    import logging
+
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return jsonify({"error": "no_file"}), 400
+
+    content = f.read()
+    filename = f.filename
+    uid = current_user.id
+
+    def _evt(payload):
+        return f"data: {_json.dumps(payload, ensure_ascii=False)}\n\n"
+
+    def generate():
+        try:
+            yield _evt({"stage": "parsing",
+                        "msg": f"Lecture de {filename} ({len(content)//1024} KB)..."})
+            parsed = IMP.parse_file(filename, content)
+            normalized = IMP.normalize_rows(parsed)
+            total = len(normalized)
+
+            yield _evt({"stage": "preparing",
+                        "total": total,
+                        "format": parsed["format"],
+                        "msg": f"{total} prospect{'s' if total > 1 else ''} prêt{'s' if total > 1 else ''} à importer"})
+
+            inserted, updated, skipped = 0, 0, 0
+            for i, p in enumerate(normalized):
+                if not p.get("nom_complet"):
+                    skipped += 1
+                    continue
+                existing = None
+                if p.get("entreprise"):
+                    existing = query_one(
+                        "SELECT id FROM prospects WHERE nom_complet = ? AND entreprise = ?",
+                        (p["nom_complet"], p["entreprise"]),
+                    )
+                try:
+                    pid = M.upsert_prospect(p)
+                    if existing:
+                        updated += 1
+                    else:
+                        inserted += 1
+                        M.create_activity(
+                            pid, "note",
+                            f"Importé via UI — source : {p.get('source', 'upload')}",
+                            f"Catégorie : {p.get('categorie', 'sans_site')}",
+                            user_id=uid,
+                        )
+                except Exception:
+                    logging.exception(f"upsert failed for {p.get('nom_complet')}")
+                    skipped += 1
+
+                # Émet tous les 5 rows ou sur la dernière
+                if (i + 1) % 5 == 0 or (i + 1) == total:
+                    yield _evt({
+                        "stage":    "importing",
+                        "current":  i + 1,
+                        "total":    total,
+                        "inserted": inserted,
+                        "updated":  updated,
+                        "skipped":  skipped,
+                    })
+
+            yield _evt({"stage": "done",
+                        "format": parsed["format"],
+                        "stats":  {"inserted": inserted, "updated": updated,
+                                   "skipped": skipped, "total": total}})
+
+        except ValueError as e:
+            yield _evt({"stage": "error", "error": str(e)})
+        except Exception as e:
+            logging.exception("import stream failed")
+            yield _evt({"stage": "error", "error": str(e)})
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control":     "no-cache",
+            "X-Accel-Buffering": "no",  # désactive le buffering reverse proxy
+        },
+    )
 
 
 # ── Bootstrap ─────────────────────────────────────────────────
