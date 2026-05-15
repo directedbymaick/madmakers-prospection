@@ -247,6 +247,64 @@ input, select, textarea {
     font-size: 13px;
 }
 
+/* AI panel (Claude generator) */
+.ai-panel {
+    padding: 14px 24px;
+    background: linear-gradient(135deg, rgba(200,255,61,0.06) 0%, rgba(200,255,61,0.02) 100%);
+    border-bottom: 1px solid rgba(200,255,61,0.20);
+}
+.ai-panel[hidden] { display: none; }
+.ai-panel-head {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 8px;
+}
+.ai-panel-lab {
+    font-family: var(--label);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--lime);
+    font-weight: 700;
+}
+.ai-close {
+    background: transparent; border: 0; color: var(--fg-mute);
+    font-size: 20px; cursor: pointer; line-height: 1; padding: 0 4px;
+}
+.ai-close:hover { color: var(--lime); }
+.ai-panel textarea {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--bg-3);
+    border: 1px solid rgba(200,255,61,0.30);
+    border-radius: var(--radius-sm);
+    color: var(--cream);
+    font-family: var(--sans);
+    font-size: 13px;
+    resize: vertical;
+}
+.ai-panel textarea:focus {
+    outline: none;
+    border-color: var(--lime);
+    box-shadow: 0 0 0 3px rgba(200,255,61,0.15);
+}
+.ai-panel-foot {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: 10px; gap: 12px;
+}
+.ai-checkbox {
+    font-size: 12px;
+    color: var(--fg-dim);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+}
+.ai-status {
+    margin-top: 8px;
+    font-size: 12px;
+    min-height: 18px;
+}
+
 .composer-meta {
     padding: 14px 24px; border-bottom: 1px solid var(--line);
 }

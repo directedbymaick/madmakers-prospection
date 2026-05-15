@@ -483,6 +483,68 @@ def api_send_email(pid):
         return jsonify({"error": "send_failed", "message": str(e)}), 500
 
 
+# ── Routes : IA Email Generator (Claude) ──────────────────────
+
+
+@app.route("/api/ai/draft-email", methods=["POST"])
+def api_ai_draft_email():
+    """Génère un draft d'email via Claude. Body JSON :
+    { prospect_id, prompt, template_id (opt), use_audit (default true) }"""
+    from . import ai as AI
+
+    payload = request.get_json(silent=True) or {}
+    pid = payload.get("prospect_id")
+    user_prompt = (payload.get("prompt") or "").strip()
+    tpl_id = payload.get("template_id")
+    use_audit = payload.get("use_audit", True)
+
+    if not pid:
+        return jsonify({"error": "prospect_id_required"}), 400
+    if not user_prompt:
+        return jsonify({"error": "prompt_required",
+                        "message": "Décris ce que tu veux dans l'email (ton, angle, action attendue)."}), 400
+
+    prospect = M.get_prospect(pid)
+    if not prospect:
+        return jsonify({"error": "prospect_not_found"}), 404
+
+    audit = None
+    if use_audit:
+        a = M.latest_audit(pid)
+        if a:
+            audit = {
+                "ok": True,
+                "security_grade": a.get("security_grade"),
+                "technos": a.get("technos"),
+                "veillot_tags": a.get("veillot_tags"),
+                "copyright_year": a.get("copyright_year"),
+                "https": a.get("https"),
+            }
+
+    base_template = None
+    if tpl_id:
+        t = M.get_template(tpl_id)
+        if t:
+            base_template = {"subject": t["subject"], "body_html": t["body_html"]}
+
+    user_dict = {"email": current_user.email, "full_name": current_user.full_name}
+
+    try:
+        result = AI.draft_email(prospect, user_dict, user_prompt,
+                                audit=audit, base_template=base_template)
+
+        # Render variables CRM (au cas où Claude a utilisé {{xxx}})
+        rendered = M.render_template_for_prospect(result, prospect, user_dict)
+
+        return jsonify({"ok": True,
+                        "subject": rendered["subject"],
+                        "body_html": rendered["body_html"]})
+    except Exception as e:
+        import logging
+        logging.exception("AI draft failed")
+        return jsonify({"error": "ai_failed", "message": str(e)}), 500
+
+
 # ── Routes : Email Templates (bibliothèque) ───────────────────
 
 

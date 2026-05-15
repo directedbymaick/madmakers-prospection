@@ -237,6 +237,25 @@
                     <option value="">— Aucun (composer libre) —</option>
                 </select>
                 <a href="{{ url_for('templates_list') }}" class="btn btn-sm" target="_blank" title="Gérer les templates">⚙</a>
+                <button type="button" class="btn btn-sm" onclick="toggleAIPanel()" title="Rédiger avec l'IA">🪄 IA</button>
+            </div>
+
+            <div class="ai-panel" id="ai-panel" hidden>
+                <div class="ai-panel-head">
+                    <span class="ai-panel-lab">🪄 Rédiger avec Claude</span>
+                    <button type="button" class="ai-close" onclick="toggleAIPanel(false)">×</button>
+                </div>
+                <textarea id="ai-prompt" rows="3"
+                          placeholder="Ex : 'Relance directe après no-reply, mise en avant du payback sub 6 mois' / 'Premier contact très court, axé Riot Games comme cas réf' / 'Email après un RDV calé qui s'est bien passé, on confirme le RDV 2'"></textarea>
+                <div class="ai-panel-foot">
+                    <label class="ai-checkbox">
+                        <input type="checkbox" id="ai-use-template" checked> Partir du template sélectionné comme base
+                    </label>
+                    <button type="button" class="btn btn-accent btn-sm" id="ai-generate-btn" onclick="generateWithAI()">
+                        Générer
+                    </button>
+                </div>
+                <div class="ai-status" id="ai-status"></div>
             </div>
 
             <div class="composer-meta">
@@ -374,6 +393,64 @@ async function loadTemplate(tplId) {
         }
     } catch (e) {
         showToast('Erreur chargement template');
+    }
+}
+
+// ─── IA Email Generator ─────────────────────────────────────
+function toggleAIPanel(forceState) {
+    const panel = document.getElementById('ai-panel');
+    if (!panel) return;
+    if (forceState === false) {
+        panel.hidden = true;
+        return;
+    }
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden) {
+        setTimeout(() => document.getElementById('ai-prompt').focus(), 50);
+    }
+}
+
+async function generateWithAI() {
+    const prompt = document.getElementById('ai-prompt').value.trim();
+    if (!prompt) {
+        showToast('Décris ce que tu veux dans l\'email');
+        return;
+    }
+
+    const btn = document.getElementById('ai-generate-btn');
+    const status = document.getElementById('ai-status');
+    const useTemplate = document.getElementById('ai-use-template').checked;
+    const tplSel = document.getElementById('composer-template-select');
+    const tplId = useTemplate && tplSel.value ? parseInt(tplSel.value) : null;
+
+    btn.disabled = true; btn.textContent = '✨ Génération...';
+    status.innerHTML = '<span class="muted">Claude réfléchit (~5-10s)...</span>';
+
+    try {
+        const r = await fetch('/api/ai/draft-email', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                prospect_id: PROSPECT_ID,
+                prompt: prompt,
+                template_id: tplId,
+                use_audit: true,
+            }),
+        });
+        const data = await r.json();
+        if (data.ok) {
+            document.getElementById('composer-subject').value = data.subject;
+            document.getElementById('composer-body').value = data.body_html;
+            status.innerHTML = '<span style="color: var(--lime);">✓ Email généré — relis avant d\'envoyer</span>';
+            showToast('IA terminée ✓');
+            setTimeout(() => toggleAIPanel(false), 1500);
+        } else {
+            status.innerHTML = `<span style="color: var(--red);">✗ ${data.message || data.error || 'Erreur'}</span>`;
+        }
+    } catch (err) {
+        status.innerHTML = `<span style="color: var(--red);">✗ Erreur réseau : ${err.message}</span>`;
+    } finally {
+        btn.disabled = false; btn.textContent = 'Générer';
     }
 }
 
