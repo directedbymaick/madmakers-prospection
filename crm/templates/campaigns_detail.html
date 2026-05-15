@@ -476,45 +476,129 @@
     </div>
 </div>
 
-<!-- ═══ Modal : ajouter / éditer étape ═══ -->
+<!-- ═══ Modal : ajouter / éditer étape (wide avec preview live) ═══ -->
 <div class="modal-backdrop" id="step-modal" hidden>
-    <div class="modal">
+    <div class="modal modal-wide">
         <div class="modal-header">
             <h2 id="step-modal-title">+ Nouvelle étape</h2>
             <button class="modal-close" onclick="closeStepModal()">×</button>
         </div>
-        <form id="step-form" onsubmit="return saveStep(event, {{ campaign.id }})" style="padding: 18px 22px">
+
+        <form id="step-form" onsubmit="return saveStep(event, {{ campaign.id }})">
             <input type="hidden" name="step_id" value="">
-            <div class="form-grid">
-                <label>N° d'étape
-                    <input type="number" name="step_number" min="1" value="{{ campaign.steps|length + 1 }}" required>
-                </label>
-                <label>Délai (jours)
-                    <input type="number" name="delay_days" min="0" value="0">
-                </label>
-                <label class="span-2">Template à utiliser
-                    <select name="template_id">
-                        <option value="">— Personnalisé (sans template) —</option>
-                        {% for t in templates %}
-                        <option value="{{ t.id }}">
-                            {% if t.segment %}[{{ SEGMENT_LABELS.get(t.segment, t.segment) }}]{% endif %}
-                            {{ t.name }}
-                        </option>
-                        {% endfor %}
-                    </select>
-                </label>
-                <label class="span-2">Objet custom <span class="muted small">(override template — laisser vide pour utiliser le template)</span>
-                    <input type="text" name="custom_subject"
-                           placeholder="Si vide, prend l'objet du template choisi">
-                </label>
-                <label class="span-2">Corps custom HTML <span class="muted small">(override template — laisser vide pour utiliser le template)</span>
-                    <textarea name="custom_body" rows="8"
-                              placeholder="Si vide, prend le corps du template choisi"></textarea>
-                </label>
-                <div class="span-2 row gap-2">
-                    <button type="submit" class="btn btn-accent" id="step-form-submit">Ajouter l'étape</button>
-                    <button type="button" class="btn" onclick="closeStepModal()">Annuler</button>
+
+            <div class="step-edit-layout">
+
+                <!-- ── COLONNE GAUCHE : édition ── -->
+                <div class="step-edit-form">
+
+                    <div class="step-edit-meta">
+                        <label>N° d'étape
+                            <input type="number" name="step_number" min="1" value="{{ campaign.steps|length + 1 }}" required>
+                        </label>
+                        <label>Délai (jours après lancement)
+                            <input type="number" name="delay_days" min="0" value="0">
+                        </label>
+                        <label class="span-full">Template de base
+                            <select name="template_id" onchange="onTemplateChange(this)">
+                                <option value="">— Sans template (custom uniquement) —</option>
+                                {% for t in templates %}
+                                <option value="{{ t.id }}"
+                                        data-subject="{{ t.subject | e }}"
+                                        data-body="{{ t.body_html | e }}">
+                                    {% if t.segment %}[{{ SEGMENT_LABELS.get(t.segment, t.segment) }}]{% endif %}
+                                    {{ t.name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                    </div>
+
+                    <div class="step-edit-content">
+                        <label>📧 Objet de l'email
+                            <input type="text" name="custom_subject" id="se-subject"
+                                   placeholder="ex : {{ '{{entreprise}}' }} — 3 points sur votre site"
+                                   oninput="updateStepPreview()">
+                        </label>
+
+                        <label>📝 Contenu de l'email (HTML)
+                            <textarea name="custom_body" id="se-body" rows="16"
+                                      placeholder="<p>Bonjour {{ '{{prenom}}' }},</p>..."
+                                      oninput="updateStepPreview()"></textarea>
+                        </label>
+                        <p class="muted small" style="margin: 4px 0 0">
+                            Si tu laisses ces champs vides ET qu'un template est choisi, le contenu du template sera utilisé tel quel.
+                            <br><b>Variables disponibles</b> : clique sur une variable à droite pour la copier.
+                        </p>
+                    </div>
+
                 </div>
+
+                <!-- ── COLONNE DROITE : preview + meta envoi + variables ── -->
+                <aside class="step-edit-side">
+
+                    <div class="se-info-card">
+                        <div class="se-info-row">
+                            <div class="se-info-lab">Envoyeur</div>
+                            <div class="se-info-val" id="se-from-display">—</div>
+                            <div class="se-info-hint">Email du signataire de la campagne (modifiable depuis la fiche campagne, pas par étape).</div>
+                        </div>
+
+                        <div class="se-info-row">
+                            <div class="se-info-lab">Destinataires</div>
+                            <div class="se-info-val" id="se-targets-display">
+                                <b>{{ targets|length }}</b> prospect{{ 's' if targets|length > 1 else '' }} dans cette campagne
+                            </div>
+                            <a href="#targets-section" class="se-info-link" onclick="closeStepModal();setTimeout(()=>document.querySelector('h2 + .table, .empty')?.scrollIntoView({behavior:'smooth'}),100)">→ Gérer les destinataires</a>
+                        </div>
+
+                        <div class="se-info-row">
+                            <div class="se-info-lab">Date d'envoi</div>
+                            <div class="se-info-val" id="se-when-display">—</div>
+                        </div>
+                    </div>
+
+                    <div class="se-vars">
+                        <h4>Variables auto-remplies à l'envoi</h4>
+                        <div class="vars-grid">
+                            {% for var, label in [
+                                ('prenom', 'Prénom prospect'),
+                                ('nom', 'Nom prospect'),
+                                ('nom_complet', 'Nom complet'),
+                                ('titre', 'Titre / poste'),
+                                ('entreprise', 'Entreprise'),
+                                ('ville', 'Ville'),
+                                ('email', 'Email prospect'),
+                                ('site_url', 'URL du site'),
+                                ('site_short', 'URL sans www/http'),
+                                ('user_prenom', 'Mon prénom'),
+                                ('user_nom', 'Mon nom'),
+                                ('calendly', 'Lien Calendly'),
+                                ('today', 'Date du jour'),
+                            ] %}
+                            <button type="button" class="var-chip" onclick="insertVar('{{ var }}', event)">
+                                <code>{{ '{{' }}{{ var }}{{ '}}' }}</code>
+                                <span>{{ label }}</span>
+                            </button>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <div class="se-preview-block">
+                        <h4>👁 Preview rendu (données fictives)</h4>
+                        <div class="se-preview-meta">
+                            <div><b>Objet :</b> <span id="se-preview-subject">—</span></div>
+                        </div>
+                        <div class="se-preview-body" id="se-preview-body">—</div>
+                    </div>
+
+                </aside>
+
+            </div>
+
+            <div class="step-edit-footer">
+                <button type="submit" class="btn btn-accent" id="step-form-submit">Ajouter l'étape</button>
+                <button type="button" class="btn" onclick="closeStepModal()">Annuler</button>
             </div>
         </form>
     </div>
@@ -546,6 +630,206 @@
 .step-meta { font-family: var(--label); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--lime); margin-bottom: 2px; }
 .step-tpl { font-size: 13px; color: var(--cream); }
 .step-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+/* ── Step edit modal (wide layout) ─────────────────────── */
+.step-edit-layout {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    min-height: 60vh;
+    max-height: calc(100vh - 200px);
+}
+@media (max-width: 900px) { .step-edit-layout { grid-template-columns: 1fr; } }
+
+.step-edit-form {
+    padding: 18px 22px;
+    border-right: 1px solid var(--line);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+.step-edit-form label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-family: var(--label);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--fg-dim);
+    font-weight: 600;
+}
+.step-edit-form label .muted {
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--fg-mute);
+    font-weight: 400;
+}
+.step-edit-form input[type="text"],
+.step-edit-form input[type="number"],
+.step-edit-form select,
+.step-edit-form textarea {
+    padding: 10px 12px;
+    background: var(--bg-3);
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-sm);
+    color: var(--cream);
+    font-family: var(--sans);
+    font-size: 14px;
+    text-transform: none;
+    letter-spacing: normal;
+}
+.step-edit-form input:focus,
+.step-edit-form select:focus,
+.step-edit-form textarea:focus {
+    outline: none;
+    border-color: var(--lime);
+    box-shadow: 0 0 0 3px var(--lime-soft);
+}
+.step-edit-form textarea {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.55;
+    min-height: 280px;
+    resize: vertical;
+}
+
+.step-edit-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 16px;
+}
+.step-edit-meta .span-full { grid-column: 1 / -1; }
+.step-edit-content { display: flex; flex-direction: column; gap: 12px; flex: 1; }
+
+.step-edit-side {
+    padding: 18px 22px;
+    overflow-y: auto;
+    background: var(--bg-2);
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.se-info-card {
+    background: var(--bg-3);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+.se-info-row {}
+.se-info-lab {
+    font-family: var(--label);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--fg-dim);
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+.se-info-val {
+    font-size: 13px;
+    color: var(--cream);
+    font-family: var(--mono);
+    word-break: break-word;
+}
+.se-info-val b { color: var(--lime); }
+.se-info-hint {
+    font-size: 11px;
+    color: var(--fg-mute);
+    font-style: italic;
+    margin-top: 3px;
+    line-height: 1.4;
+}
+.se-info-link {
+    display: inline-block;
+    font-size: 11px;
+    color: var(--lime);
+    margin-top: 6px;
+    text-decoration: underline;
+}
+.se-info-link:hover { color: var(--cream); }
+
+.se-vars h4 {
+    font-family: var(--label);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--lime);
+    margin-bottom: 8px;
+}
+.se-vars .vars-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+}
+.se-vars .var-chip {
+    background: var(--bg-3);
+    border: 1px solid var(--line);
+    color: var(--cream);
+    padding: 7px 9px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.15s ease;
+    font-family: var(--sans);
+    font-size: 11px;
+    line-height: 1.3;
+}
+.se-vars .var-chip:hover { border-color: var(--lime); background: rgba(200, 255, 61, 0.06); }
+.se-vars .var-chip code {
+    display: block;
+    color: var(--lime);
+    font-family: var(--mono);
+    font-size: 10px;
+    margin-bottom: 2px;
+}
+.se-vars .var-chip span { color: var(--fg-dim); font-size: 10.5px; }
+
+.se-preview-block h4 {
+    font-family: var(--label);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--lime);
+    margin-bottom: 8px;
+}
+.se-preview-meta {
+    background: var(--bg-3);
+    border: 1px solid var(--line);
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 12.5px;
+    color: var(--cream);
+    margin-bottom: 8px;
+}
+.se-preview-meta b { color: var(--fg-dim); font-weight: 500; }
+.se-preview-body {
+    background: white;
+    color: #0c0d0a;
+    padding: 14px 16px;
+    border-radius: var(--radius-sm);
+    font-family: 'Inter', Arial, sans-serif;
+    font-size: 13px;
+    line-height: 1.6;
+    max-height: 280px;
+    overflow-y: auto;
+}
+.se-preview-body p { margin: 0 0 10px; color: #0c0d0a; }
+.se-preview-body a { color: #1d4ed8; }
+.se-preview-body b { color: #0c0d0a; }
+
+.step-edit-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 14px 22px;
+    border-top: 1px solid var(--line);
+    background: var(--bg-2);
+}
 
 /* ── Step detail modal ─────────────────────────────────── */
 .sd-meta-grid {
@@ -692,6 +976,56 @@
 </style>
 
 <script>
+const CAMPAIGN_FROM_DISPLAY = {{ ((campaign.from_user_id and (campaign.from_user_id and 'set' or 'none')) and 'CALCULATED' or 'CURRENT') | tojson }};
+const CAMPAIGN_STARTED_AT = {{ (campaign.started_at or '') | tojson }};
+const CAMPAIGN_STATUS = {{ campaign.status | tojson }};
+
+// Preview data : 1er target si existe, sinon fictif
+const PREVIEW_VARS = {
+    prenom:       {{ ((targets and targets[0].nom_complet.split(' ')[0]) or 'Jean-Pierre') | tojson }},
+    nom:          {{ ((targets and (targets[0].nom_complet.split(' ')[-1] if ' ' in targets[0].nom_complet else '')) or 'Martin') | tojson }},
+    nom_complet:  {{ ((targets and targets[0].nom_complet) or 'Jean-Pierre Martin') | tojson }},
+    titre:        {{ ((targets and targets[0].titre) or 'CEO') | tojson }},
+    entreprise:   {{ ((targets and targets[0].entreprise) or 'Acme SARL') | tojson }},
+    ville:        {{ ((targets and targets[0].ville) or 'Lyon') | tojson }},
+    email:        {{ ((targets and targets[0].email) or 'contact@acme.fr') | tojson }},
+    site_url:     'https://www.acme.fr',
+    site_short:   'acme.fr',
+    user_prenom:  {{ (current_user.full_name or current_user.email.split('@')[0]).split(' ')[0] | tojson }},
+    user_nom:     {{ (current_user.full_name or current_user.email.split('@')[0]) | tojson }},
+    calendly:     'https://calendly.com/directedbymaick/30min',
+    today:        new Date().toLocaleDateString('fr-FR'),
+};
+
+function _fromDisplay() {
+    // Détermine "From" depuis l'user actif du CRM (current_user)
+    const email = '{{ current_user.email }}';
+    const name = {{ (current_user.full_name or current_user.email.split('@')[0]) | tojson }};
+    if (email.toLowerCase().endsWith('@mad-makers.fr')) {
+        return `${name} <${email}>`;
+    }
+    return `${name} <contact@mad-makers.fr> · Reply-To: ${email}`;
+}
+
+function _scheduledForDelay(delayDays) {
+    if (CAMPAIGN_STATUS === 'draft') {
+        return `Calculé au lancement (J+${delayDays})`;
+    }
+    if (CAMPAIGN_STARTED_AT) {
+        const base = new Date(CAMPAIGN_STARTED_AT);
+        base.setDate(base.getDate() + (delayDays || 0));
+        return base.toLocaleString('fr-FR', {dateStyle: 'medium', timeStyle: 'short'});
+    }
+    return '—';
+}
+
+function _refreshStepSideInfo() {
+    const form = document.getElementById('step-form');
+    document.getElementById('se-from-display').textContent = _fromDisplay();
+    const dd = parseInt(form.querySelector('[name="delay_days"]').value || 0);
+    document.getElementById('se-when-display').textContent = _scheduledForDelay(dd);
+}
+
 function openStepModal() {
     // Mode CRÉATION
     document.getElementById('step-modal-title').textContent = '+ Nouvelle étape';
@@ -702,6 +1036,8 @@ function openStepModal() {
     form.querySelector('[name="step_number"]').value = {{ campaign.steps|length + 1 }};
     form.querySelector('[name="delay_days"]').value = 0;
     document.getElementById('step-modal').hidden = false;
+    _refreshStepSideInfo();
+    updateStepPreview();
 }
 
 async function openStepEditModal(sid) {
@@ -723,9 +1059,76 @@ async function openStepEditModal(sid) {
         form.querySelector('[name="custom_body"]').value = step.custom_body || '';
 
         document.getElementById('step-modal').hidden = false;
+        _refreshStepSideInfo();
+        updateStepPreview();
     } catch (e) {
         showToast('Erreur réseau');
     }
+}
+
+function onTemplateChange(sel) {
+    // Si custom fields vides + template choisi, pré-remplit visuellement
+    const opt = sel.options[sel.selectedIndex];
+    const subjectField = document.querySelector('[name="custom_subject"]');
+    const bodyField = document.querySelector('[name="custom_body"]');
+
+    // Seulement si les champs sont VRAIMENT vides
+    if (sel.value && opt) {
+        if (!subjectField.value.trim() && opt.dataset.subject) {
+            subjectField.placeholder = `Template : ${opt.dataset.subject}`;
+        }
+        if (!bodyField.value.trim() && opt.dataset.body) {
+            bodyField.placeholder = `Template : ${opt.dataset.body.substring(0, 80)}…`;
+        }
+    }
+    updateStepPreview();
+}
+
+function _renderVars(text) {
+    if (!text) return '';
+    return text.replace(/\{\{\s*([a-z_]+)\s*\}\}/g, function(_, k) {
+        return PREVIEW_VARS[k] !== undefined ? PREVIEW_VARS[k] : ('{' + '{' + k + '}' + '}');
+    });
+}
+
+function updateStepPreview() {
+    const subjectField = document.querySelector('[name="custom_subject"]');
+    const bodyField = document.querySelector('[name="custom_body"]');
+    const tplSel = document.querySelector('[name="template_id"]');
+
+    // Récupère subject + body actuels (custom ou template fallback)
+    let subject = subjectField.value.trim();
+    let body = bodyField.value.trim();
+    if (!subject || !body) {
+        const opt = tplSel.options[tplSel.selectedIndex];
+        if (opt && opt.value) {
+            if (!subject) subject = opt.dataset.subject || '';
+            if (!body) body = opt.dataset.body || '';
+        }
+    }
+
+    document.getElementById('se-preview-subject').textContent = _renderVars(subject) || '—';
+    document.getElementById('se-preview-body').innerHTML = _renderVars(body) || '<i class="muted">(vide — choisis un template ou écris un contenu)</i>';
+    _refreshStepSideInfo();
+}
+
+function insertVar(varName, event) {
+    event.preventDefault();
+    const bodyField = document.querySelector('[name="custom_body"]');
+    const subjectField = document.querySelector('[name="custom_subject"]');
+
+    // Détermine où insérer : le dernier champ focusé (subject ou body)
+    let target = bodyField;
+    if (document.activeElement === subjectField) target = subjectField;
+
+    const placeholder = '{' + '{' + varName + '}' + '}';
+    const start = target.selectionStart;
+    const end = target.selectionEnd;
+    target.value = target.value.substring(0, start) + placeholder + target.value.substring(end);
+    target.focus();
+    target.selectionStart = target.selectionEnd = start + placeholder.length;
+    updateStepPreview();
+    showToast('Inséré : ' + placeholder);
 }
 
 function closeStepModal() {
