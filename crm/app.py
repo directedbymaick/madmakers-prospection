@@ -483,6 +483,117 @@ def api_send_email(pid):
         return jsonify({"error": "send_failed", "message": str(e)}), 500
 
 
+# ── Routes : Email Templates (bibliothèque) ───────────────────
+
+
+@app.route("/templates")
+def templates_list():
+    seg = request.args.get("segment") or None
+    step = request.args.get("step") or None
+    tpls = M.list_templates(segment=seg, step=step)
+    return render_template("templates_list.html",
+                           templates=tpls,
+                           filters={"segment": seg, "step": step},
+                           SEGMENT_LABELS=M.SEGMENT_LABELS,
+                           STEP_LABELS=M.STEP_LABELS,
+                           CATEGORY_LABELS=M.CATEGORY_LABELS)
+
+
+@app.route("/templates/new", methods=["GET", "POST"])
+def templates_new():
+    if request.method == "POST":
+        return _save_template(None)
+    return render_template("template_form.html",
+                           tpl=None,
+                           SEGMENT_LABELS=M.SEGMENT_LABELS,
+                           STEP_LABELS=M.STEP_LABELS,
+                           CATEGORY_LABELS=M.CATEGORY_LABELS,
+                           TEMPLATE_VARIABLES=M.TEMPLATE_VARIABLES)
+
+
+@app.route("/templates/<int:tpl_id>", methods=["GET", "POST"])
+def templates_edit(tpl_id):
+    tpl = M.get_template(tpl_id)
+    if not tpl:
+        abort(404)
+    if request.method == "POST":
+        return _save_template(tpl_id)
+    return render_template("template_form.html",
+                           tpl=tpl,
+                           SEGMENT_LABELS=M.SEGMENT_LABELS,
+                           STEP_LABELS=M.STEP_LABELS,
+                           CATEGORY_LABELS=M.CATEGORY_LABELS,
+                           TEMPLATE_VARIABLES=M.TEMPLATE_VARIABLES)
+
+
+def _save_template(tpl_id):
+    name = (request.form.get("name") or "").strip()
+    subject = (request.form.get("subject") or "").strip()
+    body_html = (request.form.get("body_html") or "").strip()
+    description = (request.form.get("description") or "").strip()
+    category = request.form.get("category") or None
+    segment = request.form.get("segment") or None
+    step = request.form.get("step") or None
+
+    if not name or not subject or not body_html:
+        from flask import flash as _flash
+        _flash("Nom, objet et corps sont requis.", "error")
+        return redirect(url_for("templates_new") if not tpl_id else url_for("templates_edit", tpl_id=tpl_id))
+
+    if tpl_id:
+        M.update_template(tpl_id, name=name, subject=subject, body_html=body_html,
+                          description=description, category=category,
+                          segment=segment, step=step)
+    else:
+        tpl_id = M.create_template(
+            name=name, subject=subject, body_html=body_html,
+            description=description, category=category,
+            segment=segment, step=step, user_id=current_user.id,
+        )
+    return redirect(url_for("templates_list"))
+
+
+@app.route("/api/templates", methods=["GET"])
+def api_templates_list():
+    seg = request.args.get("segment") or None
+    step = request.args.get("step") or None
+    tpls = M.list_templates(segment=seg, step=step)
+    return jsonify([{
+        "id": t["id"], "name": t["name"], "description": t.get("description"),
+        "category": t.get("category"), "segment": t.get("segment"), "step": t.get("step"),
+        "subject": t["subject"],
+    } for t in tpls])
+
+
+@app.route("/api/templates/<int:tpl_id>/render", methods=["GET"])
+def api_template_render(tpl_id):
+    """Rend un template avec les variables remplies depuis un prospect."""
+    tpl = M.get_template(tpl_id)
+    if not tpl:
+        return jsonify({"error": "not_found"}), 404
+    pid = request.args.get("prospect_id", type=int)
+    prospect = M.get_prospect(pid) if pid else {}
+    user = {
+        "email": current_user.email,
+        "full_name": current_user.full_name,
+    }
+    out = M.render_template_for_prospect(tpl, prospect or {}, user)
+    return jsonify({"subject": out["subject"], "body_html": out["body_html"],
+                    "name": tpl["name"]})
+
+
+@app.route("/api/templates/<int:tpl_id>/archive", methods=["POST"])
+def api_template_archive(tpl_id):
+    M.archive_template(tpl_id)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/templates/<int:tpl_id>/delete", methods=["POST"])
+def api_template_delete(tpl_id):
+    M.delete_template(tpl_id)
+    return jsonify({"ok": True})
+
+
 # ── Routes : Unsubscribe (public, no auth) ────────────────────
 
 

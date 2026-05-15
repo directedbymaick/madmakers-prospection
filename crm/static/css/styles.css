@@ -211,6 +211,42 @@ input, select, textarea {
 .email-composer form {
     display: flex; flex-direction: column;
 }
+/* Templates dropdown */
+.composer-templates {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 24px;
+    background: var(--bg-3);
+    border-bottom: 1px solid var(--line);
+}
+.composer-templates select {
+    flex: 1;
+    background: var(--bg-2);
+    color: var(--cream);
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+    font-family: var(--sans);
+    font-size: 13px;
+}
+.composer-templates select:focus {
+    outline: none;
+    border-color: var(--lime);
+}
+.composer-templates select optgroup {
+    color: var(--lime);
+    font-family: var(--label);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+.composer-templates select option {
+    color: var(--cream);
+    font-family: var(--sans);
+    font-size: 13px;
+}
+
 .composer-meta {
     padding: 14px 24px; border-bottom: 1px solid var(--line);
 }

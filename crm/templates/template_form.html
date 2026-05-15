@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}{% if tpl %}{{ tpl.name }}{% else %}Nouveau template{% endif %} — Mad Makers CRM{% endblock %}
+{% block page_title %}{% if tpl %}{{ tpl.name }}{% else %}Nouveau template{% endif %}{% endblock %}
+{% block topbar_actions %}
+    <a href="{{ url_for('templates_list') }}" class="btn btn-sm">← Liste</a>
+{% endblock %}
+
+{% block content %}
+
+<div class="split">
+
+    <section class="card">
+        <h2>Édition du template</h2>
+        <form method="POST" class="form-grid">
+            <label class="span-2">Nom du template
+                <input type="text" name="name" required value="{{ tpl.name if tpl else '' }}"
+                       placeholder="ex : Sans site · Relance J+4">
+            </label>
+
+            <label class="span-2">Description (optionnel)
+                <input type="text" name="description" value="{{ tpl.description if tpl else '' }}"
+                       placeholder="Quand utiliser ce template">
+            </label>
+
+            <label>Segment cible
+                <select name="segment">
+                    <option value="">— Aucun —</option>
+                    {% for k, label in SEGMENT_LABELS.items() %}
+                    <option value="{{ k }}" {% if tpl and tpl.segment == k %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+
+            <label>Étape
+                <select name="step">
+                    <option value="">— Aucune —</option>
+                    {% for k, label in STEP_LABELS.items() %}
+                    <option value="{{ k }}" {% if tpl and tpl.step == k %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+
+            <label class="span-2">Catégorie
+                <select name="category">
+                    <option value="">— Aucune —</option>
+                    {% for k, label in CATEGORY_LABELS.items() %}
+                    <option value="{{ k }}" {% if tpl and tpl.category == k %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+
+            <label class="span-2">Objet de l'email
+                <input type="text" name="subject" required
+                       value="{{ tpl.subject if tpl else '' }}"
+                       placeholder="ex : {{ '{{entreprise}}' }} — 3 fuites identifiées"
+                       oninput="updatePreview()">
+            </label>
+
+            <label class="span-2">Corps HTML (utilise les variables {{ '{{prenom}}' }}, {{ '{{entreprise}}' }}, etc.)
+                <textarea name="body_html" required rows="18" id="body-editor"
+                          placeholder="<p>Bonjour {{ '{{prenom}}' }},</p>..."
+                          oninput="updatePreview()">{{ tpl.body_html if tpl else '' }}</textarea>
+            </label>
+
+            <div class="span-2 row gap-2">
+                <button class="btn btn-accent" type="submit">{% if tpl %}Mettre à jour{% else %}Créer le template{% endif %}</button>
+                <a href="{{ url_for('templates_list') }}" class="btn">Annuler</a>
+            </div>
+        </form>
+    </section>
+
+    <div>
+        <section class="card">
+            <h2>Variables disponibles</h2>
+            <p class="muted small mb-2">Clique pour copier dans le presse-papier.</p>
+            <div class="vars-grid">
+                {% for var, label in TEMPLATE_VARIABLES %}
+                <button type="button" class="var-chip"
+                        onclick="navigator.clipboard.writeText('{{ '{{' }}{{ var }}{{ '}}' }}');showToast('Copié : {{ '{{' }}{{ var }}{{ '}}' }}');">
+                    <code>{{ '{{' }}{{ var }}{{ '}}' }}</code>
+                    <span>{{ label }}</span>
+                </button>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>Preview (avec données fictives)</h2>
+            <div class="preview-meta">
+                <div><b>Objet :</b> <span id="preview-subject">—</span></div>
+            </div>
+            <div class="preview-body" id="preview-body"></div>
+        </section>
+    </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<style>
+.vars-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.var-chip {
+    background: var(--bg-3);
+    border: 1px solid var(--line);
+    color: var(--cream);
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.15s ease;
+}
+.var-chip:hover { border-color: var(--lime); }
+.var-chip code {
+    display: block;
+    color: var(--lime);
+    font-family: var(--mono);
+    font-size: 11px;
+    margin-bottom: 2px;
+}
+.var-chip span { font-size: 10.5px; color: var(--fg-dim); }
+.preview-meta { padding: 8px 12px; background: var(--bg-3); border-radius: var(--radius-sm); margin-bottom: 12px; font-size: 13px; }
+.preview-body { padding: 16px 18px; background: var(--bg-3); border-radius: var(--radius-sm); color: var(--cream); font-size: 14px; line-height: 1.7; max-height: 500px; overflow-y: auto; }
+.preview-body p { margin: 0 0 12px; }
+.preview-body a { color: var(--lime); }
+</style>
+
+<script>
+// Données fictives pour le preview
+const PREVIEW_VARS = {
+    prenom: 'Jean-Pierre', nom: 'Martin', nom_complet: 'Jean-Pierre Martin',
+    titre: 'CEO', entreprise: 'Acme SARL', ville: 'Lyon',
+    email: 'jp.martin@acme.fr', site_url: 'https://www.acme.fr',
+    site_short: 'acme.fr', linkedin: 'linkedin.com/in/jpmartin',
+    user_prenom: '{{ (current_user.full_name or current_user.email.split("@")[0]).split(" ")[0] }}',
+    user_nom: '{{ current_user.full_name or current_user.email.split("@")[0] }}',
+    user_email: '{{ current_user.email }}',
+    calendly: 'https://calendly.com/directedbymaick/30min',
+    today: new Date().toLocaleDateString('fr-FR'),
+};
+
+function renderVars(text) {
+    return (text || '').replace(/\{\{\s*([a-z_]+)\s*\}\}/g, (_, k) => PREVIEW_VARS[k] || `{{${k}}}`);
+}
+
+function updatePreview() {
+    const subject = document.querySelector('[name=subject]').value;
+    const body = document.getElementById('body-editor').value;
+    document.getElementById('preview-subject').textContent = renderVars(subject) || '—';
+    document.getElementById('preview-body').innerHTML = renderVars(body) || '<i class="muted">(vide)</i>';
+}
+
+updatePreview();
+</script>
+{% endblock %}

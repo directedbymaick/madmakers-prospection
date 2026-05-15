@@ -167,3 +167,24 @@ CREATE TABLE IF NOT EXISTS unsubscribes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_unsubs_email ON unsubscribes(email);
+
+-- ── Email templates (bibliothèque réutilisable) ─────────────
+CREATE TABLE IF NOT EXISTS email_templates (
+    id              BIGSERIAL PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    category        TEXT,                     -- cold_email / follow_up / breakup / custom
+    segment         TEXT,                     -- A_SANS_SITE / B_DG / C_DAF / D_MARKETING / GENERIC
+    step            TEXT,                     -- J0 / J+4 / J+10 / J+18 / custom
+    subject         TEXT NOT NULL,
+    body_html       TEXT NOT NULL,
+    variables_used  TEXT,                     -- JSON list ex: ["prenom","entreprise","site_url"]
+    is_archived     BOOLEAN NOT NULL DEFAULT FALSE,
+    created_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tpls_segment ON email_templates(segment);
+CREATE INDEX IF NOT EXISTS idx_tpls_step    ON email_templates(step);
+CREATE INDEX IF NOT EXISTS idx_tpls_active  ON email_templates(is_archived);

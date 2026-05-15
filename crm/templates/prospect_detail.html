@@ -231,6 +231,14 @@
             <button class="modal-close" onclick="closeEmailComposer()">×</button>
         </div>
         <form id="email-form" enctype="multipart/form-data" onsubmit="return sendEmail(event)">
+            <div class="composer-templates">
+                <label class="composer-lab">Template</label>
+                <select id="composer-template-select" onchange="loadTemplate(this.value)">
+                    <option value="">— Aucun (composer libre) —</option>
+                </select>
+                <a href="{{ url_for('templates_list') }}" class="btn btn-sm" target="_blank" title="Gérer les templates">⚙</a>
+            </div>
+
             <div class="composer-meta">
                 <label class="composer-row">
                     <span class="composer-lab">De</span>
@@ -303,9 +311,12 @@ async function runAudit(pid, btn) {
 }
 
 // ─── Email Composer ─────────────────────────────────────────
-function openEmailComposer() {
+let _templatesLoaded = false;
+
+async function openEmailComposer() {
     const modal = document.getElementById('email-modal');
     if (!modal) return;
+
     // Compute From display (mirror server logic)
     const fromDisplay = document.getElementById('composer-from-display');
     if (CURRENT_USER_EMAIL.toLowerCase().endsWith('@mad-makers.fr')) {
@@ -313,9 +324,57 @@ function openEmailComposer() {
     } else {
         fromDisplay.textContent = `${CURRENT_USER_NAME} <contact@mad-makers.fr> · Reply-To: ${CURRENT_USER_EMAIL}`;
     }
+
+    // Load templates list (once)
+    if (!_templatesLoaded) {
+        try {
+            const r = await fetch('/api/templates');
+            const tpls = await r.json();
+            const sel = document.getElementById('composer-template-select');
+            // Group by segment
+            const grouped = {};
+            tpls.forEach(t => {
+                const segKey = t.segment || 'AUTRE';
+                if (!grouped[segKey]) grouped[segKey] = [];
+                grouped[segKey].push(t);
+            });
+            const segOrder = ['A_SANS_SITE', 'B_DG', 'C_DAF', 'D_MARKETING', 'E_RH', 'GENERIC', 'AUTRE'];
+            segOrder.forEach(seg => {
+                if (!grouped[seg]) return;
+                const og = document.createElement('optgroup');
+                og.label = seg;
+                grouped[seg].forEach(t => {
+                    const op = document.createElement('option');
+                    op.value = t.id;
+                    op.textContent = `${t.name} — ${t.subject.substring(0, 50)}`;
+                    og.appendChild(op);
+                });
+                sel.appendChild(og);
+            });
+            _templatesLoaded = true;
+        } catch (e) {
+            console.error('Failed to load templates', e);
+        }
+    }
+
     modal.hidden = false;
     document.body.style.overflow = 'hidden';
     setTimeout(() => document.getElementById('composer-subject').focus(), 50);
+}
+
+async function loadTemplate(tplId) {
+    if (!tplId) return;
+    try {
+        const r = await fetch(`/api/templates/${tplId}/render?prospect_id=${PROSPECT_ID}`);
+        const data = await r.json();
+        if (data.subject !== undefined) {
+            document.getElementById('composer-subject').value = data.subject;
+            document.getElementById('composer-body').value = data.body_html;
+            showToast(`Template chargé : ${data.name}`);
+        }
+    } catch (e) {
+        showToast('Erreur chargement template');
+    }
 }
 
 function closeEmailComposer() {

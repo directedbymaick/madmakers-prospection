@@ -281,6 +281,158 @@ def log_email_sent(*, prospect_id, user_id, from_email, from_name, to_email,
     )
 
 
+# ─── Email Templates ─────────────────────────────────────────
+
+
+SEGMENT_LABELS = {
+    "A_SANS_SITE":  "Sans site",
+    "B_DG":         "DG / Founder / CEO",
+    "C_DAF":        "DAF / Finance",
+    "D_MARKETING":  "Marketing / Growth",
+    "E_RH":         "RH / Talent",
+    "GENERIC":      "Générique",
+}
+
+STEP_LABELS = {
+    "J0":     "J0 — Premier contact",
+    "J+4":    "J+4 — Relance 1",
+    "J+10":   "J+10 — Relance 2",
+    "J+18":   "J+18 — Breakup",
+    "custom": "Personnalisé",
+}
+
+CATEGORY_LABELS = {
+    "cold_email":  "Cold email",
+    "follow_up":   "Relance / Suivi",
+    "breakup":     "Breakup",
+    "rdv_recap":   "Récap RDV",
+    "custom":      "Personnalisé",
+}
+
+# Variables exposées au template engine
+TEMPLATE_VARIABLES = [
+    ("prenom",       "Prénom du prospect"),
+    ("nom",          "Nom de famille"),
+    ("nom_complet",  "Nom complet"),
+    ("titre",        "Titre / poste"),
+    ("entreprise",   "Nom de l'entreprise"),
+    ("ville",        "Ville"),
+    ("email",        "Email du prospect"),
+    ("site_url",     "URL du site web"),
+    ("site_short",   "URL site (sans http/www)"),
+    ("linkedin",     "LinkedIn du prospect"),
+    ("user_prenom",  "Mon prénom (signataire)"),
+    ("user_nom",     "Mon nom complet"),
+    ("user_email",   "Mon email"),
+    ("calendly",     "Lien Calendly Mad Makers"),
+    ("today",        "Date du jour (JJ/MM/AAAA)"),
+]
+
+
+def list_templates(segment=None, step=None, include_archived=False):
+    sql = "SELECT * FROM email_templates WHERE 1=1"
+    params = []
+    if not include_archived:
+        sql += " AND is_archived = FALSE"
+    if segment:
+        sql += " AND segment = ?"; params.append(segment)
+    if step:
+        sql += " AND step = ?"; params.append(step)
+    sql += " ORDER BY segment NULLS LAST, step NULLS LAST, name"
+    return query(sql, params)
+
+
+def get_template(tpl_id):
+    return query_one("SELECT * FROM email_templates WHERE id = ?", (tpl_id,))
+
+
+def create_template(*, name, subject, body_html, description="", category=None,
+                    segment=None, step=None, user_id=None):
+    return execute(
+        """INSERT INTO email_templates
+           (name, description, category, segment, step, subject, body_html, created_by_user_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (name, description, category, segment, step, subject, body_html, user_id),
+    )
+
+
+def update_template(tpl_id, **fields):
+    if not fields:
+        return
+    fields["updated_at"] = datetime.utcnow().isoformat()
+    cols = list(fields.keys())
+    sql = f"UPDATE email_templates SET {', '.join(f'{c} = ?' for c in cols)} WHERE id = ?"
+    execute(sql, list(fields.values()) + [tpl_id])
+
+
+def archive_template(tpl_id):
+    update_template(tpl_id, is_archived=True)
+
+
+def delete_template(tpl_id):
+    execute("DELETE FROM email_templates WHERE id = ?", (tpl_id,))
+
+
+def render_template_for_prospect(tpl_dict: dict, prospect_dict: dict,
+                                  current_user_dict: dict = None) -> dict:
+    """Remplit les variables {{xxx}} avec les valeurs du prospect + user courant.
+
+    Returns: {"subject": ..., "body_html": ...}
+    """
+    import re as _re
+    from urllib.parse import urlparse
+
+    p = prospect_dict or {}
+    u = current_user_dict or {}
+
+    # Build variables map
+    site = (p.get("site_url") or "").strip()
+    site_short = ""
+    if site:
+        try:
+            parsed = urlparse(site if site.startswith("http") else "http://" + site)
+            site_short = (parsed.netloc or parsed.path or "").lstrip("www.").rstrip("/")
+        except Exception:
+            site_short = site
+
+    user_prenom = ""
+    user_nom = u.get("full_name") or ""
+    if user_nom:
+        user_prenom = user_nom.split()[0]
+
+    vars_map = {
+        "prenom":       p.get("prenom") or (p.get("nom_complet") or "").split(" ")[0] or "",
+        "nom":          p.get("nom") or "",
+        "nom_complet":  p.get("nom_complet") or "",
+        "titre":        p.get("titre") or "",
+        "entreprise":   p.get("entreprise") or "",
+        "ville":        p.get("ville") or "",
+        "email":        p.get("email") or "",
+        "site_url":     site,
+        "site_short":   site_short,
+        "linkedin":     p.get("linkedin_url") or "",
+        "user_prenom":  user_prenom,
+        "user_nom":     user_nom,
+        "user_email":   u.get("email") or "",
+        "calendly":     "https://calendly.com/directedbymaick/30min",
+        "today":        datetime.now().strftime("%d/%m/%Y"),
+    }
+
+    def _render(text: str) -> str:
+        if not text:
+            return ""
+        # {{var}} et {{ var }} (avec espaces autorisés)
+        def repl(m):
+            key = m.group(1).strip()
+            return vars_map.get(key, m.group(0))
+        return _re.sub(r"\{\{\s*([a-z_][a-z0-9_]*)\s*\}\}", repl, text)
+
+    return {
+        "subject":   _render(tpl_dict.get("subject", "")),
+        "body_html": _render(tpl_dict.get("body_html", "")),
+    }
+
+
 # ─── Unsubscribes (RGPD) ─────────────────────────────────────
 
 

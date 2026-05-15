@@ -158,6 +158,34 @@ def _run_migrations(cur):
     if not cur.fetchone():
         cur.execute("CREATE INDEX idx_emails_scheduled ON emails(scheduled_at) WHERE status='scheduled'")
 
+    # Table email_templates
+    cur.execute("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_schema='public' AND table_name='email_templates'
+    """)
+    if not cur.fetchone():
+        cur.execute("""
+            CREATE TABLE email_templates (
+                id              BIGSERIAL PRIMARY KEY,
+                name            TEXT NOT NULL,
+                description     TEXT,
+                category        TEXT,
+                segment         TEXT,
+                step            TEXT,
+                subject         TEXT NOT NULL,
+                body_html       TEXT NOT NULL,
+                variables_used  TEXT,
+                is_archived     BOOLEAN NOT NULL DEFAULT FALSE,
+                created_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+                created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """)
+        cur.execute("CREATE INDEX idx_tpls_segment ON email_templates(segment)")
+        cur.execute("CREATE INDEX idx_tpls_step ON email_templates(step)")
+        cur.execute("CREATE INDEX idx_tpls_active ON email_templates(is_archived)")
+        log.info("Table email_templates créée")
+
 
 def query(sql, params=()):
     """Run SELECT, return list of dicts."""

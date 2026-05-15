@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Templates email — Mad Makers CRM{% endblock %}
+{% block page_title %}Templates email ({{ templates|length }}){% endblock %}
+{% block topbar_actions %}
+    <a href="{{ url_for('templates_new') }}" class="btn btn-accent">+ Nouveau template</a>
+{% endblock %}
+
+{% block content %}
+
+<form method="GET" class="filters">
+    <select name="segment">
+        <option value="">Tous segments</option>
+        {% for k, label in SEGMENT_LABELS.items() %}
+        <option value="{{ k }}" {% if filters.segment == k %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+    </select>
+
+    <select name="step">
+        <option value="">Toutes étapes</option>
+        {% for k, label in STEP_LABELS.items() %}
+        <option value="{{ k }}" {% if filters.step == k %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+    </select>
+
+    <button type="submit" class="btn btn-primary">Filtrer</button>
+    {% if filters.segment or filters.step %}
+        <a href="{{ url_for('templates_list') }}" class="btn btn-sm">Reset</a>
+    {% endif %}
+</form>
+
+{% if templates %}
+<div class="card card-flush">
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Nom</th>
+                <th>Segment</th>
+                <th>Étape</th>
+                <th>Catégorie</th>
+                <th>Objet</th>
+                <th>MAJ</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for t in templates %}
+            <tr>
+                <td>
+                    <a href="{{ url_for('templates_edit', tpl_id=t.id) }}"><b>{{ t.name }}</b></a>
+                    {% if t.description %}<div class="muted small">{{ t.description }}</div>{% endif %}
+                </td>
+                <td>
+                    {% if t.segment %}<span class="badge">{{ SEGMENT_LABELS.get(t.segment, t.segment) }}</span>{% else %}—{% endif %}
+                </td>
+                <td><span class="mono small">{{ STEP_LABELS.get(t.step, t.step or '—') }}</span></td>
+                <td>{% if t.category %}<span class="badge">{{ CATEGORY_LABELS.get(t.category, t.category) }}</span>{% else %}—{% endif %}</td>
+                <td class="small muted">{{ t.subject[:60] }}{% if t.subject|length > 60 %}…{% endif %}</td>
+                <td class="small muted">{{ t.updated_at | relative }}</td>
+                <td>
+                    <a href="{{ url_for('templates_edit', tpl_id=t.id) }}" class="btn btn-sm">Éditer</a>
+                    <button class="btn btn-sm btn-danger" onclick="deleteTpl({{ t.id }}, '{{ t.name|replace("'", "\\'") }}')">×</button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card empty empty-large">
+    Aucun template trouvé.
+    <div class="mt-3">
+        <a href="{{ url_for('templates_new') }}" class="btn btn-accent">+ Créer le premier</a>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function deleteTpl(id, name) {
+    if (!confirm(`Supprimer le template « ${name} » ?`)) return;
+    const r = await fetch(`/api/templates/${id}/delete`, {method: 'POST'});
+    if (r.ok) location.reload();
+    else showToast('Erreur suppression');
+}
+</script>
+{% endblock %}
