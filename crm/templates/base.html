@@ -33,6 +33,9 @@
             <a href="{{ url_for('activities_list') }}" class="{% if request.endpoint and request.endpoint.startswith('activities') %}active{% endif %}">
                 <span class="icon">◷</span> Activités
             </a>
+            <a href="{{ url_for('campaigns_list') }}" class="{% if request.endpoint and request.endpoint.startswith('campaigns') %}active{% endif %}">
+                <span class="icon">⚑</span> Campagnes
+            </a>
             <a href="{{ url_for('templates_list') }}" class="{% if request.endpoint and request.endpoint.startswith('templates') %}active{% endif %}">
                 <span class="icon">✎</span> Templates
             </a>

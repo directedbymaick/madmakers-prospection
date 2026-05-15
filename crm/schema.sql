@@ -188,3 +188,51 @@ CREATE TABLE IF NOT EXISTS email_templates (
 CREATE INDEX IF NOT EXISTS idx_tpls_segment ON email_templates(segment);
 CREATE INDEX IF NOT EXISTS idx_tpls_step    ON email_templates(step);
 CREATE INDEX IF NOT EXISTS idx_tpls_active  ON email_templates(is_archived);
+
+-- ── Campagnes (séquences d'emails programmés) ──────────────
+CREATE TABLE IF NOT EXISTS campaigns (
+    id              BIGSERIAL PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    status          TEXT NOT NULL DEFAULT 'draft',   -- draft / active / paused / completed
+    from_user_id    BIGINT REFERENCES users(id) ON DELETE SET NULL,   -- signataire
+    created_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    started_at      TIMESTAMPTZ,
+    completed_at    TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_campaigns_status ON campaigns(status);
+
+-- ── Steps d'une campagne (J0, J+4, J+10, J+18...) ──────────
+CREATE TABLE IF NOT EXISTS campaign_steps (
+    id              BIGSERIAL PRIMARY KEY,
+    campaign_id     BIGINT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    step_number     INTEGER NOT NULL,                -- 1, 2, 3, ...
+    delay_days      INTEGER NOT NULL DEFAULT 0,      -- 0 = J0, 4 = J+4, etc.
+    delay_hours     INTEGER NOT NULL DEFAULT 0,      -- override fin (ex: J+1 12h)
+    template_id     BIGINT REFERENCES email_templates(id) ON DELETE SET NULL,
+    custom_subject  TEXT,                            -- override le subject du template
+    custom_body     TEXT,                            -- override le body du template
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_steps_campaign ON campaign_steps(campaign_id);
+
+-- ── Prospects assignés à une campagne ──────────────────────
+CREATE TABLE IF NOT EXISTS campaign_targets (
+    id              BIGSERIAL PRIMARY KEY,
+    campaign_id     BIGINT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    prospect_id     BIGINT NOT NULL REFERENCES prospects(id) ON DELETE CASCADE,
+    status          TEXT NOT NULL DEFAULT 'active',  -- active / paused / completed / stopped / failed
+    stop_reason     TEXT,                             -- replied / unsubscribed / manual / bounced
+    started_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at    TIMESTAMPTZ,
+    last_step_sent  INTEGER NOT NULL DEFAULT 0,      -- dernier step_number envoyé
+    UNIQUE (campaign_id, prospect_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_targets_campaign ON campaign_targets(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_targets_prospect ON campaign_targets(prospect_id);
+CREATE INDEX IF NOT EXISTS idx_targets_status   ON campaign_targets(status);

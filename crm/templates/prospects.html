@@ -116,7 +116,29 @@
     <span class="bulk-count"><b id="bulk-count">0</b> prospect<span id="bulk-plural">s</span> sélectionné<span id="bulk-plural2">s</span></span>
     <div class="bulk-actions">
         <button class="btn" onclick="clearSelection()">Désélectionner</button>
+        <button class="btn btn-accent" onclick="openAssignCampaignModal()">⚑ Ajouter à campagne</button>
         <button class="btn btn-danger" onclick="deleteBulk()">🗑 Supprimer</button>
+    </div>
+</div>
+
+<!-- Modal : ajouter à campagne -->
+<div class="modal-backdrop" id="assign-campaign-modal" hidden>
+    <div class="modal" style="max-width: 480px">
+        <div class="modal-header">
+            <h2>Ajouter à une campagne</h2>
+            <button class="modal-close" onclick="closeAssignCampaignModal()">×</button>
+        </div>
+        <div style="padding: 18px 22px">
+            <p class="muted small mb-2">Sélectionne la campagne (status draft ou active) à laquelle ajouter <b id="assign-count">0</b> prospect(s).</p>
+            <select id="assign-campaign-select" style="width: 100%; padding: 10px; background: var(--bg-3); border: 1px solid var(--line-2); border-radius: var(--radius-sm); color: var(--cream)">
+                <option value="">— Chargement... —</option>
+            </select>
+            <div class="row gap-2 mt-3">
+                <button class="btn btn-accent" onclick="confirmAssignCampaign()">Ajouter</button>
+                <button class="btn" onclick="closeAssignCampaignModal()">Annuler</button>
+                <a href="{{ url_for('campaigns_new') }}" target="_blank" class="btn btn-sm" style="margin-left:auto">+ Nouvelle campagne</a>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -208,6 +230,68 @@ async function deleteBulk() {
         clearSelection();
         showToast(`${ids.length} prospect${ids.length>1?'s':''} supprimé${ids.length>1?'s':''}`);
     });
+}
+
+// ─── Ajouter à campagne ────────────────────────────────────
+let _campaignsLoaded = false;
+
+async function openAssignCampaignModal() {
+    const ids = Array.from(document.querySelectorAll('.row-check:checked')).map(c => parseInt(c.value));
+    if (!ids.length) return;
+    document.getElementById('assign-count').textContent = ids.length;
+    const modal = document.getElementById('assign-campaign-modal');
+    modal.hidden = false;
+
+    if (!_campaignsLoaded) {
+        try {
+            const r = await fetch('/api/campaigns/list-active');
+            const data = await r.json();
+            const sel = document.getElementById('assign-campaign-select');
+            sel.innerHTML = '<option value="">— Choisir une campagne —</option>';
+            if (data.campaigns && data.campaigns.length) {
+                data.campaigns.forEach(c => {
+                    const op = document.createElement('option');
+                    op.value = c.id;
+                    op.textContent = `[${c.status}] ${c.name}`;
+                    sel.appendChild(op);
+                });
+                _campaignsLoaded = true;
+            } else {
+                sel.innerHTML = '<option value="">Aucune campagne — créez-en une d\'abord</option>';
+            }
+        } catch (e) {
+            showToast('Erreur chargement campagnes');
+        }
+    }
+}
+
+function closeAssignCampaignModal() {
+    document.getElementById('assign-campaign-modal').hidden = true;
+}
+
+async function confirmAssignCampaign() {
+    const sel = document.getElementById('assign-campaign-select');
+    const cid = parseInt(sel.value);
+    if (!cid) { showToast('Choisis une campagne'); return; }
+    const ids = Array.from(document.querySelectorAll('.row-check:checked')).map(c => parseInt(c.value));
+    if (!ids.length) return;
+
+    try {
+        const r = await fetch(`/api/campaigns/${cid}/assign`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({prospect_ids: ids}),
+        });
+        const data = await r.json();
+        if (data.ok) {
+            showToast(`${data.added} prospect(s) ajouté(s) à la campagne`);
+            closeAssignCampaignModal();
+            clearSelection();
+        } else {
+            showToast('Erreur : ' + (data.message || data.error));
+        }
+    } catch (e) {
+        showToast('Erreur réseau');
+    }
 }
 
 async function _deleteIds(ids, onSuccess) {

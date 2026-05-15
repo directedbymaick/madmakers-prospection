@@ -59,8 +59,10 @@ PUBLIC_ENDPOINTS = {"auth", "static", "public_unsubscribe"}
 @app.before_request
 def _require_login_everywhere():
     endpoint = request.endpoint or ""
-    # Endpoints exempts (blueprint auth.*, static, unsubscribe public)
-    if endpoint == "static" or endpoint.startswith("auth.") or endpoint == "public_unsubscribe":
+    # Endpoints exempts (blueprint auth.*, static, unsubscribe public, cron token-protected)
+    if endpoint == "static" or endpoint.startswith("auth.") \
+            or endpoint == "public_unsubscribe" \
+            or endpoint == "api_cron_process":
         return None
     if current_user.is_authenticated:
         return None
@@ -765,6 +767,241 @@ def activities_list():
 def api_complete_activity(aid):
     M.complete_activity(aid)
     return jsonify({"ok": True})
+
+
+# ── Routes : Campagnes ────────────────────────────────────────
+
+
+@app.route("/campaigns")
+def campaigns_list():
+    from . import campaigns as CMP
+    status = request.args.get("status") or None
+    rows = CMP.list_campaigns(status=status)
+    return render_template("campaigns_list.html",
+                           campaigns=rows,
+                           filters={"status": status},
+                           CAMPAIGN_STATUSES=CMP.CAMPAIGN_STATUSES)
+
+
+@app.route("/campaigns/new", methods=["GET", "POST"])
+def campaigns_new():
+    from . import campaigns as CMP
+    if request.method == "POST":
+        name = (request.form.get("name") or "").strip()
+        description = (request.form.get("description") or "").strip()
+        from_user_id_raw = request.form.get("from_user_id")
+        from_user_id = int(from_user_id_raw) if from_user_id_raw and from_user_id_raw.isdigit() else current_user.id
+        if not name:
+            from flask import flash as _flash
+            _flash("Le nom est requis.", "error")
+            return redirect(url_for("campaigns_new"))
+        cid = CMP.create_campaign(name=name, description=description,
+                                  from_user_id=from_user_id, user_id=current_user.id)
+        return redirect(url_for("campaigns_detail", cid=cid))
+    # GET : afficher form
+    users = M.query("SELECT id, email, full_name FROM users WHERE is_active = TRUE ORDER BY full_name")
+    return render_template("campaigns_new.html", users=users)
+
+
+@app.route("/campaigns/<int:cid>")
+def campaigns_detail(cid):
+    from . import campaigns as CMP
+    c = CMP.get_campaign_detail(cid)
+    if not c:
+        abort(404)
+    targets = CMP.list_targets(cid)
+    templates = M.list_templates()
+    return render_template("campaigns_detail.html",
+                           campaign=c, targets=targets, templates=templates,
+                           CAMPAIGN_STATUSES=CMP.CAMPAIGN_STATUSES,
+                           TARGET_STATUSES=CMP.TARGET_STATUSES,
+                           SEGMENT_LABELS=M.SEGMENT_LABELS,
+                           STAGES=STAGES, STAGE_KEYS=STAGE_KEYS,
+                           STAGE_LABELS=STAGE_LABELS, STAGE_COLORS=STAGE_COLORS,
+                           CATEGORIES=CATEGORIES)
+
+
+# ── API campagnes ─────────────────────────────────────────────
+
+
+@app.route("/api/campaigns/list-active", methods=["GET"])
+def api_campaigns_list_active():
+    """Liste des campagnes draft+active+paused (pour dropdown 'ajouter à campagne')."""
+    from . import campaigns as CMP
+    rows = M.query(
+        """SELECT id, name, status FROM campaigns
+           WHERE status IN ('draft', 'active', 'paused')
+           ORDER BY created_at DESC"""
+    )
+    return jsonify({"campaigns": rows})
+
+
+@app.route("/api/campaigns/<int:cid>", methods=["POST", "DELETE"])
+def api_campaign_update(cid):
+    from . import campaigns as CMP
+    if request.method == "DELETE":
+        CMP.delete_campaign(cid)
+        return jsonify({"ok": True})
+    payload = request.get_json(silent=True) or {}
+    CMP.update_campaign(cid, **{k: v for k, v in payload.items()
+                                 if k in {"name", "description", "from_user_id"}})
+    return jsonify({"ok": True})
+
+
+@app.route("/api/campaigns/<int:cid>/steps", methods=["POST"])
+def api_campaign_add_step(cid):
+    from . import campaigns as CMP
+    payload = request.get_json(silent=True) or {}
+    step_number = int(payload.get("step_number") or 1)
+    delay_days = int(payload.get("delay_days") or 0)
+    delay_hours = int(payload.get("delay_hours") or 0)
+    template_id = payload.get("template_id")
+    if template_id:
+        try:
+            template_id = int(template_id)
+        except (TypeError, ValueError):
+            template_id = None
+    custom_subject = payload.get("custom_subject")
+    custom_body = payload.get("custom_body")
+    sid = CMP.add_step(cid, step_number=step_number, delay_days=delay_days,
+                       delay_hours=delay_hours, template_id=template_id,
+                       custom_subject=custom_subject, custom_body=custom_body)
+    return jsonify({"ok": True, "id": sid})
+
+
+@app.route("/api/campaigns/steps/<int:step_id>", methods=["POST", "DELETE"])
+def api_campaign_step_edit(step_id):
+    from . import campaigns as CMP
+    if request.method == "DELETE":
+        CMP.delete_step(step_id)
+        return jsonify({"ok": True})
+    payload = request.get_json(silent=True) or {}
+    fields = {k: v for k, v in payload.items()
+              if k in {"step_number", "delay_days", "delay_hours",
+                       "template_id", "custom_subject", "custom_body"}}
+    CMP.update_step(step_id, **fields)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/campaigns/<int:cid>/assign", methods=["POST"])
+def api_campaign_assign(cid):
+    """Assigne des prospects à la campagne.
+
+    Body JSON :
+      - {prospect_ids: [1, 2, 3]}         → explicit list
+      - {filters: {categories: [...], stages: [...], ...}}  → search-based
+    """
+    from . import campaigns as CMP
+    payload = request.get_json(silent=True) or {}
+
+    prospect_ids = payload.get("prospect_ids")
+    if not prospect_ids and payload.get("filters"):
+        # Resolve via search_prospect_ids (full filter set)
+        filters = dict(payload["filters"])
+        # Force exclusion default RGPD + déjà dans cette campagne
+        filters.setdefault("exclude_unsubscribed", True)
+        filters.setdefault("exclude_in_campaign_id", cid)
+        prospect_ids = M.search_prospect_ids(filters)
+
+    if not prospect_ids:
+        return jsonify({"error": "no_prospects",
+                        "message": "Aucun prospect ne correspond aux critères."}), 400
+
+    prospect_ids = [int(pid) for pid in prospect_ids]
+    added = CMP.assign_prospects(cid, prospect_ids)
+    return jsonify({"ok": True, "added": added,
+                    "total_requested": len(prospect_ids)})
+
+
+@app.route("/api/prospects/search", methods=["POST"])
+def api_prospects_search():
+    """Recherche avancée avec preview live. Body : {filters: {...}}
+    Retourne {count, sample (5 rows)}.
+    """
+    payload = request.get_json(silent=True) or {}
+    filters = payload.get("filters") or {}
+    result = M.search_prospects(filters, sample_limit=5)
+    # Strip internals
+    return jsonify({
+        "count":  result["count"],
+        "sample": result["sample"],
+    })
+
+
+@app.route("/api/campaigns/<int:cid>/launch", methods=["POST"])
+def api_campaign_launch(cid):
+    from . import campaigns as CMP
+    c = CMP.get_campaign(cid)
+    if not c:
+        return jsonify({"error": "not_found"}), 404
+    steps = CMP.list_steps(cid)
+    if not steps:
+        return jsonify({"error": "no_steps",
+                        "message": "Ajoute au moins 1 étape avant de lancer."}), 400
+    targets = CMP.list_targets(cid)
+    if not targets:
+        return jsonify({"error": "no_targets",
+                        "message": "Assigne au moins 1 prospect avant de lancer."}), 400
+    CMP.launch_campaign(cid)
+    # Schedule immédiat des emails de J0
+    stats = CMP.schedule_pending_emails()
+    return jsonify({"ok": True, "scheduled": stats})
+
+
+@app.route("/api/campaigns/<int:cid>/pause", methods=["POST"])
+def api_campaign_pause(cid):
+    from . import campaigns as CMP
+    CMP.pause_campaign(cid)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/campaigns/<int:cid>/resume", methods=["POST"])
+def api_campaign_resume(cid):
+    from . import campaigns as CMP
+    CMP.resume_campaign(cid)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/campaigns/targets/<int:target_id>/stop", methods=["POST"])
+def api_target_stop(target_id):
+    from . import campaigns as CMP
+    payload = request.get_json(silent=True) or {}
+    CMP.stop_target(target_id, reason=payload.get("reason") or "manual")
+    return jsonify({"ok": True})
+
+
+# ── Cron endpoints (token-protected) ──────────────────────────
+
+
+def _check_cron_token():
+    """Vérifie le Bearer token dans Authorization header (ou ?token=)."""
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        provided = auth[7:].strip()
+    else:
+        provided = request.args.get("token") or ""
+    expected = os.getenv("CRON_TOKEN", "")
+    return expected and provided == expected
+
+
+@app.route("/api/cron/process-due-emails", methods=["POST", "GET"])
+def api_cron_process():
+    """Endpoint cron : appelé toutes les ~10 min par GitHub Actions.
+    1. schedule_pending_emails — crée les emails à venir
+    2. process_due_emails — envoie ceux qui sont dûs
+    """
+    if not _check_cron_token():
+        return jsonify({"error": "unauthorized"}), 401
+
+    from . import campaigns as CMP
+    scheduled_stats = CMP.schedule_pending_emails()
+    sent_stats = CMP.process_due_emails(limit=50)
+    return jsonify({
+        "ok": True,
+        "scheduled": scheduled_stats,
+        "sent":      sent_stats,
+        "at":        datetime.utcnow().isoformat(),
+    })
 
 
 # ── Routes : Imports (upload UI) ──────────────────────────────

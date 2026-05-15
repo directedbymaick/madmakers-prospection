@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Nouvelle campagne — Mad Makers CRM{% endblock %}
+{% block page_title %}Nouvelle campagne{% endblock %}
+{% block topbar_actions %}
+    <a href="{{ url_for('campaigns_list') }}" class="btn btn-sm">← Liste</a>
+{% endblock %}
+
+{% block content %}
+
+<div class="card" style="max-width: 700px">
+    <h2>Étape 1 / 3 — Infos générales</h2>
+    <p class="muted small">Crée la campagne. Tu pourras ensuite ajouter des étapes et des prospects sur la page suivante.</p>
+
+    <form method="POST" class="form-grid">
+        <label class="span-2">Nom de la campagne
+            <input type="text" name="name" required autofocus
+                   placeholder="ex : Refonte sites Q4 — secteur restauration">
+        </label>
+        <label class="span-2">Description (optionnel)
+            <textarea name="description" rows="3"
+                      placeholder="Objectif, cible, contexte..."></textarea>
+        </label>
+        <label class="span-2">Signataire (depuis qui partent les emails)
+            <select name="from_user_id" required>
+                {% for u in users %}
+                <option value="{{ u.id }}" {% if u.email == current_user.email %}selected{% endif %}>
+                    {{ u.full_name or u.email.split('@')[0] }} ({{ u.email }})
+                </option>
+                {% endfor %}
+            </select>
+        </label>
+        <div class="span-2 row gap-2">
+            <button class="btn btn-accent" type="submit">Créer la campagne →</button>
+            <a href="{{ url_for('campaigns_list') }}" class="btn">Annuler</a>
+        </div>
+    </form>
+</div>
+
+<div class="card" style="max-width: 700px; background: var(--bg-3);">
+    <h3>Comment ça marche</h3>
+    <ol style="margin: 8px 0 0 20px; color: var(--fg-dim); line-height: 1.8">
+        <li><b>Tu crées la campagne</b> ici (nom, description, signataire)</li>
+        <li>Sur la page suivante, tu ajoutes des <b>étapes</b> (J0, J+4, J+10...) en choisissant un template par étape</li>
+        <li>Tu assignes des <b>prospects</b> à la campagne (depuis filtres avancés ou liste manuelle)</li>
+        <li>Tu <b>lances</b> la campagne — les emails J0 partent immédiatement, les suivants selon le calendrier</li>
+        <li>Le <b>cron GitHub Actions</b> envoie les emails programmés toutes les 10 min</li>
+        <li>Si un prospect se désabonne → la séquence s'arrête automatiquement pour lui (RGPD)</li>
+    </ol>
+</div>
+
+{% endblock %}

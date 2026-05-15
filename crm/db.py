@@ -186,6 +186,86 @@ def _run_migrations(cur):
         cur.execute("CREATE INDEX idx_tpls_active ON email_templates(is_archived)")
         log.info("Table email_templates créée")
 
+    # ── Tables campagnes ──────────────────────────────────────
+    cur.execute("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_schema='public' AND table_name='campaigns'
+    """)
+    if not cur.fetchone():
+        cur.execute("""
+            CREATE TABLE campaigns (
+                id              BIGSERIAL PRIMARY KEY,
+                name            TEXT NOT NULL,
+                description     TEXT,
+                status          TEXT NOT NULL DEFAULT 'draft',
+                from_user_id    BIGINT REFERENCES users(id) ON DELETE SET NULL,
+                created_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+                started_at      TIMESTAMPTZ,
+                completed_at    TIMESTAMPTZ,
+                created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """)
+        cur.execute("CREATE INDEX idx_campaigns_status ON campaigns(status)")
+        log.info("Table campaigns créée")
+
+    cur.execute("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_schema='public' AND table_name='campaign_steps'
+    """)
+    if not cur.fetchone():
+        cur.execute("""
+            CREATE TABLE campaign_steps (
+                id              BIGSERIAL PRIMARY KEY,
+                campaign_id     BIGINT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+                step_number     INTEGER NOT NULL,
+                delay_days      INTEGER NOT NULL DEFAULT 0,
+                delay_hours     INTEGER NOT NULL DEFAULT 0,
+                template_id     BIGINT REFERENCES email_templates(id) ON DELETE SET NULL,
+                custom_subject  TEXT,
+                custom_body     TEXT,
+                created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """)
+        cur.execute("CREATE INDEX idx_steps_campaign ON campaign_steps(campaign_id)")
+        log.info("Table campaign_steps créée")
+
+    cur.execute("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_schema='public' AND table_name='campaign_targets'
+    """)
+    if not cur.fetchone():
+        cur.execute("""
+            CREATE TABLE campaign_targets (
+                id              BIGSERIAL PRIMARY KEY,
+                campaign_id     BIGINT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+                prospect_id     BIGINT NOT NULL REFERENCES prospects(id) ON DELETE CASCADE,
+                status          TEXT NOT NULL DEFAULT 'active',
+                stop_reason     TEXT,
+                started_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                completed_at    TIMESTAMPTZ,
+                last_step_sent  INTEGER NOT NULL DEFAULT 0,
+                UNIQUE (campaign_id, prospect_id)
+            )
+        """)
+        cur.execute("CREATE INDEX idx_targets_campaign ON campaign_targets(campaign_id)")
+        cur.execute("CREATE INDEX idx_targets_prospect ON campaign_targets(prospect_id)")
+        cur.execute("CREATE INDEX idx_targets_status   ON campaign_targets(status)")
+        log.info("Tables campaign_steps + campaign_targets créées")
+
+    # Lien emails → campagne (optionnel : un email peut venir d'une campagne)
+    for col, typ in [
+        ("campaign_id",      "BIGINT REFERENCES campaigns(id) ON DELETE SET NULL"),
+        ("campaign_step_id", "BIGINT REFERENCES campaign_steps(id) ON DELETE SET NULL"),
+    ]:
+        cur.execute("""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_schema='public' AND table_name='emails' AND column_name=%s
+        """, (col,))
+        if not cur.fetchone():
+            cur.execute(f"ALTER TABLE emails ADD COLUMN {col} {typ}")
+            log.info(f"Migration : emails.{col} ajouté")
+
 
 def query(sql, params=()):
     """Run SELECT, return list of dicts."""

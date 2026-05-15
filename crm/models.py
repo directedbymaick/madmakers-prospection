@@ -25,6 +25,145 @@ def list_prospects(category=None, stage=None, search=None, ville=None, limit=Non
     return query(sql, params)
 
 
+def search_prospects(filters: dict, *, sample_limit: int = 5) -> dict:
+    """Recherche avancée multi-critères. Retourne {count, sample}.
+
+    filters supportés (tous optionnels) :
+      - categories: list[str]     ex: ["sans_site", "avec_site_veillot"]
+      - stages:     list[str]
+      - sources:    list[str]
+      - villes:     list[str]     (LIKE %x%, OR entre les villes)
+      - search:     str           (LIKE sur nom/entreprise/titre/email)
+      - interest_min: int 1-5
+      - interest_max: int 1-5
+      - has_email:  bool
+      - has_phone:  bool
+      - has_site:   bool / None pour ne pas filtrer
+      - last_contacted: 'never' / 'gt_7d' / 'gt_30d' / 'gt_90d' / 'lt_7d' / None
+      - exclude_unsubscribed: bool (default True, RGPD)
+      - exclude_in_campaign_id: int (exclut prospects déjà dans cette campagne)
+      - exclude_in_other_campaigns: bool (exclut prospects déjà dans autres campagnes actives/draft)
+      - order: 'name' / 'interest' / 'created' / 'updated'
+    """
+    where = ["1=1"]
+    params = []
+
+    cats = filters.get("categories") or []
+    if cats:
+        placeholders = ",".join(["?"] * len(cats))
+        where.append(f"p.categorie IN ({placeholders})")
+        params.extend(cats)
+
+    stages = filters.get("stages") or []
+    if stages:
+        placeholders = ",".join(["?"] * len(stages))
+        where.append(f"p.stage IN ({placeholders})")
+        params.extend(stages)
+
+    sources = filters.get("sources") or []
+    if sources:
+        placeholders = ",".join(["?"] * len(sources))
+        where.append(f"p.source IN ({placeholders})")
+        params.extend(sources)
+
+    villes = filters.get("villes") or []
+    if villes:
+        ors = " OR ".join(["LOWER(p.ville) LIKE LOWER(?)"] * len(villes))
+        where.append(f"({ors})")
+        params.extend(f"%{v}%" for v in villes)
+
+    search = (filters.get("search") or "").strip()
+    if search:
+        where.append("(p.nom_complet ILIKE ? OR p.entreprise ILIKE ? OR p.titre ILIKE ? OR p.email ILIKE ?)")
+        s = f"%{search}%"
+        params.extend([s, s, s, s])
+
+    imin = filters.get("interest_min")
+    imax = filters.get("interest_max")
+    if imin is not None:
+        where.append("p.interet >= ?"); params.append(int(imin))
+    if imax is not None:
+        where.append("p.interet <= ?"); params.append(int(imax))
+
+    if filters.get("has_email"):
+        where.append("p.email IS NOT NULL AND p.email <> ''")
+    if filters.get("has_phone"):
+        where.append("(p.phone_mobile IS NOT NULL AND p.phone_mobile <> '') OR (p.phone_office IS NOT NULL AND p.phone_office <> '')")
+
+    has_site = filters.get("has_site")
+    if has_site is True:
+        where.append("p.site_url IS NOT NULL AND p.site_url <> ''")
+    elif has_site is False:
+        where.append("(p.site_url IS NULL OR p.site_url = '')")
+
+    lc = filters.get("last_contacted")
+    if lc == "never":
+        where.append("p.last_contacted_at IS NULL")
+    elif lc == "gt_7d":
+        where.append("(p.last_contacted_at IS NULL OR p.last_contacted_at < NOW() - INTERVAL '7 days')")
+    elif lc == "gt_30d":
+        where.append("(p.last_contacted_at IS NULL OR p.last_contacted_at < NOW() - INTERVAL '30 days')")
+    elif lc == "gt_90d":
+        where.append("(p.last_contacted_at IS NULL OR p.last_contacted_at < NOW() - INTERVAL '90 days')")
+    elif lc == "lt_7d":
+        where.append("p.last_contacted_at >= NOW() - INTERVAL '7 days'")
+
+    if filters.get("exclude_unsubscribed", True):
+        where.append("(p.email IS NULL OR p.email = '' OR NOT EXISTS (SELECT 1 FROM unsubscribes u WHERE LOWER(u.email) = LOWER(p.email)))")
+
+    exc_cid = filters.get("exclude_in_campaign_id")
+    if exc_cid:
+        where.append("NOT EXISTS (SELECT 1 FROM campaign_targets t WHERE t.prospect_id = p.id AND t.campaign_id = ?)")
+        params.append(int(exc_cid))
+
+    if filters.get("exclude_in_other_campaigns"):
+        where.append("""NOT EXISTS (
+            SELECT 1 FROM campaign_targets t
+            JOIN campaigns c ON c.id = t.campaign_id
+            WHERE t.prospect_id = p.id
+              AND c.status IN ('draft', 'active', 'paused')
+              AND t.status = 'active'
+        )""")
+
+    where_clause = " AND ".join(where)
+
+    # Count total
+    count_sql = f"SELECT COUNT(*) AS n FROM prospects p WHERE {where_clause}"
+    total = query_one(count_sql, params)["n"]
+
+    # Sample
+    order = filters.get("order") or "updated"
+    order_sql = {
+        "name":     "p.nom_complet ASC",
+        "interest": "p.interet DESC NULLS LAST, p.updated_at DESC",
+        "created":  "p.created_at DESC",
+        "updated":  "p.updated_at DESC",
+    }.get(order, "p.updated_at DESC")
+
+    sample_sql = f"""
+        SELECT p.id, p.nom_complet, p.entreprise, p.titre, p.ville, p.email,
+               p.phone_mobile, p.phone_office, p.categorie, p.stage, p.interet,
+               p.source, p.last_contacted_at, p.site_url
+        FROM prospects p
+        WHERE {where_clause}
+        ORDER BY {order_sql}
+        LIMIT ?
+    """
+    sample = query(sample_sql, params + [sample_limit])
+
+    # Pour l'assign : liste des ids
+    return {"count": total, "sample": sample, "where": where_clause, "params": params}
+
+
+def search_prospect_ids(filters: dict) -> list[int]:
+    """Retourne juste la liste des ids matchant les filtres (pour assign bulk)."""
+    res = search_prospects(filters, sample_limit=0)
+    where = res["where"]
+    params = res["params"]
+    rows = query(f"SELECT p.id FROM prospects p WHERE {where}", params)
+    return [r["id"] for r in rows]
+
+
 def get_prospect(prospect_id):
     return query_one("SELECT * FROM prospects WHERE id = ?", (prospect_id,))
 

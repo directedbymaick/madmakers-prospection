@@ -1,0 +1,48 @@
+# ============================================================
+# Mad Makers CRM — Cron emails (séquences automatiques)
+# ============================================================
+# Pingue toutes les 10 min /api/cron/process-due-emails du CRM en prod
+# pour :
+#   1. Réveiller Render Free (15 min sleep)
+#   2. Programmer les nouveaux emails à venir
+#   3. Envoyer ceux qui sont dûs maintenant
+#
+# Secrets requis (Settings → Secrets and variables → Actions) :
+#   - APP_BASE_URL = https://madmakers-crm.onrender.com (sans slash final)
+#   - CRON_TOKEN   = même valeur que dans Render env vars
+
+name: Cron emails
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # toutes les 10 minutes
+  workflow_dispatch:           # permet trigger manuel depuis l'UI GitHub
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping CRM cron endpoint
+        env:
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          CRON_TOKEN:   ${{ secrets.CRON_TOKEN }}
+        run: |
+          if [ -z "$APP_BASE_URL" ] || [ -z "$CRON_TOKEN" ]; then
+            echo "::error::Secrets APP_BASE_URL ou CRON_TOKEN manquants"
+            exit 1
+          fi
+          echo "→ POST $APP_BASE_URL/api/cron/process-due-emails"
+          # --max-time 120 : Render Free peut prendre 50s pour se réveiller
+          response=$(curl -sS -w "\n%{http_code}" --max-time 120 \
+            -X POST "$APP_BASE_URL/api/cron/process-due-emails" \
+            -H "Authorization: Bearer $CRON_TOKEN" \
+            -H "Content-Type: application/json")
+          http_code=$(echo "$response" | tail -n 1)
+          body=$(echo "$response" | sed '$d')
+          echo "HTTP $http_code"
+          echo "$body"
+          if [ "$http_code" != "200" ]; then
+            echo "::error::Cron endpoint returned HTTP $http_code"
+            exit 1
+          fi

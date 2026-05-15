@@ -1,0 +1,694 @@
+{% extends "base.html" %}
+{% block title %}{{ campaign.name }} — Campagne — Mad Makers CRM{% endblock %}
+{% block page_title %}{{ campaign.name }}{% endblock %}
+{% block topbar_actions %}
+    <a href="{{ url_for('campaigns_list') }}" class="btn btn-sm">← Liste</a>
+    {% set st = CAMPAIGN_STATUSES.get(campaign.status, (campaign.status, '#6B7280')) %}
+    <span class="stage-pill" style="background:{{ st[1] }}">{{ st[0] }}</span>
+
+    {% if campaign.status == 'draft' %}
+        <button class="btn btn-accent" onclick="launchCampaign({{ campaign.id }})">🚀 Lancer la campagne</button>
+    {% elif campaign.status == 'active' %}
+        <button class="btn" onclick="pauseCampaign({{ campaign.id }})">⏸ Pause</button>
+    {% elif campaign.status == 'paused' %}
+        <button class="btn btn-accent" onclick="resumeCampaign({{ campaign.id }})">▶ Reprendre</button>
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+
+<!-- KPIs -->
+<div class="kpi-grid">
+    <div class="kpi accent">
+        <div class="label">Prospects assignés</div>
+        <div class="value">{{ campaign.targets_count or 0 }}</div>
+        <div class="sub">
+            {% if campaign.targets_by_status %}
+                {% if campaign.targets_by_status.get('active') %}{{ campaign.targets_by_status.active }} actifs · {% endif %}
+                {% if campaign.targets_by_status.get('completed') %}{{ campaign.targets_by_status.completed }} terminés · {% endif %}
+                {% if campaign.targets_by_status.get('stopped') %}{{ campaign.targets_by_status.stopped }} stoppés{% endif %}
+            {% else %}—{% endif %}
+        </div>
+    </div>
+    <div class="kpi blue">
+        <div class="label">Emails envoyés</div>
+        <div class="value">{{ campaign.emails_by_status.get('sent', 0) }}</div>
+        <div class="sub">{{ campaign.emails_by_status.get('scheduled', 0) }} programmés</div>
+    </div>
+    <div class="kpi red">
+        <div class="label">Échecs / Bloqués</div>
+        <div class="value">{{ campaign.emails_by_status.get('failed', 0) }}</div>
+        <div class="sub">bounces, RGPD désabos, erreurs</div>
+    </div>
+    <div class="kpi green">
+        <div class="label">Étapes</div>
+        <div class="value">{{ campaign.steps|length }}</div>
+        <div class="sub">{% if campaign.started_at %}lancée {{ campaign.started_at | relative }}{% else %}pas encore lancée{% endif %}</div>
+    </div>
+</div>
+
+<div class="split">
+
+    <!-- ═══ Steps (séquence) ═══ -->
+    <section class="card">
+        <h2 class="row-between">
+            <span>Étapes de la séquence</span>
+            <button class="btn btn-sm" onclick="openStepModal()">+ Ajouter étape</button>
+        </h2>
+
+        {% if campaign.steps %}
+        <div class="steps-list">
+            {% for s in campaign.steps %}
+            <div class="step-card">
+                <div class="step-num">{{ s.step_number }}</div>
+                <div class="step-body">
+                    <div class="step-meta">
+                        <b>Délai</b> :
+                        {% if s.delay_days == 0 and s.delay_hours == 0 %}J0 (immédiat)
+                        {% elif s.delay_days > 0 %}J+{{ s.delay_days }}{% if s.delay_hours %} +{{ s.delay_hours }}h{% endif %}
+                        {% else %}+{{ s.delay_hours }}h{% endif %}
+                    </div>
+                    <div class="step-tpl">
+                        {% if s.template_name %}
+                            Template : <b>{{ s.template_name }}</b>
+                            <div class="muted small">{{ s.template_subject }}</div>
+                        {% elif s.custom_subject %}
+                            Email custom : <b>{{ s.custom_subject }}</b>
+                        {% else %}
+                            <span class="warn">⚠ Pas de template ni de contenu custom</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <button class="btn btn-sm btn-danger" onclick="deleteStep({{ s.id }})">🗑</button>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty">Aucune étape pour l'instant.
+            <div class="mt-2"><button class="btn" onclick="openStepModal()">+ Ajouter la première</button></div>
+        </div>
+        {% endif %}
+    </section>
+
+    <!-- ═══ Sidebar : assigner prospects + description ═══ -->
+    <div>
+
+        <section class="card">
+            <h2>Assigner des prospects</h2>
+            <p class="muted small mb-3">Deux options pour ajouter des prospects à la campagne :</p>
+
+            <button type="button" class="btn btn-accent" style="width:100%; padding: 14px" onclick="openFilterModal()">
+                🔍 Sélection avancée multi-critères
+            </button>
+
+            <div class="hr"></div>
+
+            <p class="small muted">Ou depuis la <a href="{{ url_for('prospects_list') }}">liste prospects</a> :
+            coche les prospects → clique "⚑ Ajouter à campagne" en bas → choisis cette campagne.</p>
+        </section>
+
+        {% if campaign.description %}
+        <section class="card">
+            <h3>Description</h3>
+            <p>{{ campaign.description }}</p>
+        </section>
+        {% endif %}
+
+    </div>
+
+</div>
+
+<!-- ═══ Targets (prospects assignés) ═══ -->
+<section class="card mt-4">
+    <h2>Prospects de la campagne ({{ targets|length }})</h2>
+    {% if targets %}
+    <div class="card-flush" style="margin: -8px 0 0">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Nom</th>
+                    <th>Entreprise</th>
+                    <th>Email</th>
+                    <th>Catégorie</th>
+                    <th>Statut</th>
+                    <th>Step env.</th>
+                    <th>Ajouté</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in targets %}
+                {% set tst = TARGET_STATUSES.get(t.status, (t.status, '#6B7280')) %}
+                <tr>
+                    <td><a href="{{ url_for('prospect_detail', pid=t.prospect_id) }}">{{ t.nom_complet }}</a></td>
+                    <td>{{ t.entreprise }}</td>
+                    <td class="small mono">{{ t.email or '—' }}</td>
+                    <td>
+                        {% if t.categorie %}
+                        {% set cat = CATEGORIES.get(t.categorie, ('?', '#000', '#eee')) %}
+                        <span class="badge badge-cat-{{ t.categorie|replace('_', '-') }}">{{ cat[0] }}</span>
+                        {% endif %}
+                    </td>
+                    <td><span class="stage-pill" style="background:{{ tst[1] }}">{{ tst[0] }}</span>
+                        {% if t.stop_reason %}<div class="muted small">{{ t.stop_reason }}</div>{% endif %}
+                    </td>
+                    <td class="mono small">{{ t.last_step_sent }} / {{ campaign.steps|length }}</td>
+                    <td class="small muted">{{ t.started_at | relative }}</td>
+                    <td>
+                        {% if t.status == 'active' %}
+                        <button class="btn btn-sm btn-danger" onclick="stopTarget({{ t.id }})">Stop</button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty">Aucun prospect assigné. Utilise les filtres à droite pour en ajouter.</div>
+    {% endif %}
+</section>
+
+<!-- ═══ Modal : sélection avancée prospects ═══ -->
+<div class="modal-backdrop" id="filter-modal" hidden>
+    <div class="modal modal-wide">
+        <div class="modal-header">
+            <h2>🔍 Sélection avancée de prospects</h2>
+            <button class="modal-close" onclick="closeFilterModal()">×</button>
+        </div>
+
+        <div class="filter-layout">
+
+            <!-- ── COLONNE GAUCHE : filtres ── -->
+            <aside class="filter-sidebar">
+
+                <div class="filter-section">
+                    <h3>⚡ Presets rapides</h3>
+                    <div class="preset-grid">
+                        <button type="button" class="preset-chip" onclick="applyPreset('hot')">🔥 Hot leads<small>intérêt 4-5</small></button>
+                        <button type="button" class="preset-chip" onclick="applyPreset('never')">❄️ Jamais contactés<small>last_contact = null</small></button>
+                        <button type="button" class="preset-chip" onclick="applyPreset('sans_site')">🏠 Sans site<small>création from scratch</small></button>
+                        <button type="button" class="preset-chip" onclick="applyPreset('veillot')">📅 Veillot (refonte)<small>cible priorité 1</small></button>
+                        <button type="button" class="preset-chip" onclick="applyPreset('with_phone')">📞 Avec téléphone<small>cold call possible</small></button>
+                        <button type="button" class="preset-chip" onclick="applyPreset('email_only')">📧 Email uniquement<small>séquence email</small></button>
+                    </div>
+                </div>
+
+                <div class="filter-section">
+                    <h3>Catégorie</h3>
+                    <div class="chip-grid">
+                        {% for k, v in CATEGORIES.items() %}
+                        <label class="check-chip">
+                            <input type="checkbox" name="categories" value="{{ k }}" onchange="updateSearch()">
+                            <span class="badge badge-cat-{{ k|replace('_', '-') }}">{{ v[0] }}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="filter-section">
+                    <h3>Stage pipeline</h3>
+                    <div class="chip-grid">
+                        {% for sk, sl, sc in STAGES %}
+                        <label class="check-chip">
+                            <input type="checkbox" name="stages" value="{{ sk }}" onchange="updateSearch()">
+                            <span class="stage-pill" style="background:{{ sc }}">{{ sl }}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="filter-section">
+                    <h3>Intérêt</h3>
+                    <div class="range-row">
+                        <label>
+                            <small>Min</small>
+                            <select name="interest_min" onchange="updateSearch()">
+                                <option value="">—</option>
+                                {% for i in range(1, 6) %}<option value="{{ i }}">{{ i }}</option>{% endfor %}
+                            </select>
+                        </label>
+                        <span class="range-sep">→</span>
+                        <label>
+                            <small>Max</small>
+                            <select name="interest_max" onchange="updateSearch()">
+                                <option value="">—</option>
+                                {% for i in range(1, 6) %}<option value="{{ i }}">{{ i }}</option>{% endfor %}
+                            </select>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="filter-section">
+                    <h3>Recherche libre</h3>
+                    <input type="text" name="search" placeholder="nom, entreprise, titre, email..." oninput="debouncedSearch()">
+                </div>
+
+                <div class="filter-section">
+                    <h3>Ville(s)</h3>
+                    <input type="text" name="villes" placeholder="ex : Paris, Lyon, Nantes (séparées par ,)" oninput="debouncedSearch()">
+                    <p class="small muted mt-1">Recherche partielle, plusieurs villes possibles séparées par virgule.</p>
+                </div>
+
+                <div class="filter-section">
+                    <h3>Contact disponible</h3>
+                    <label class="toggle-row">
+                        <input type="checkbox" name="has_email" onchange="updateSearch()">
+                        <span>📧 Email requis</span>
+                    </label>
+                    <label class="toggle-row">
+                        <input type="checkbox" name="has_phone" onchange="updateSearch()">
+                        <span>📞 Téléphone requis</span>
+                    </label>
+                    <label class="toggle-row">
+                        <input type="radio" name="has_site" value="" checked onchange="updateSearch()">
+                        <span>Site : peu importe</span>
+                    </label>
+                    <label class="toggle-row">
+                        <input type="radio" name="has_site" value="true" onchange="updateSearch()">
+                        <span>🌐 Avec site web</span>
+                    </label>
+                    <label class="toggle-row">
+                        <input type="radio" name="has_site" value="false" onchange="updateSearch()">
+                        <span>🚫 Sans site</span>
+                    </label>
+                </div>
+
+                <div class="filter-section">
+                    <h3>Dernière interaction</h3>
+                    <select name="last_contacted" onchange="updateSearch()">
+                        <option value="">N'importe quand</option>
+                        <option value="never">Jamais contacté</option>
+                        <option value="gt_7d">Pas contacté depuis 7+ jours</option>
+                        <option value="gt_30d">Pas contacté depuis 30+ jours</option>
+                        <option value="gt_90d">Pas contacté depuis 90+ jours</option>
+                        <option value="lt_7d">Contacté dans les 7 derniers jours</option>
+                    </select>
+                </div>
+
+                <div class="filter-section">
+                    <h3>Exclusions <span class="muted small">(activées par défaut)</span></h3>
+                    <label class="toggle-row">
+                        <input type="checkbox" name="exclude_in_campaign_id" checked onchange="updateSearch()">
+                        <span>Exclure prospects déjà dans cette campagne</span>
+                    </label>
+                    <label class="toggle-row">
+                        <input type="checkbox" name="exclude_unsubscribed" checked onchange="updateSearch()">
+                        <span>Exclure désabonnés <small>(RGPD)</small></span>
+                    </label>
+                    <label class="toggle-row">
+                        <input type="checkbox" name="exclude_in_other_campaigns" onchange="updateSearch()">
+                        <span>Exclure prospects dans d'autres campagnes actives</span>
+                    </label>
+                </div>
+
+                <div class="filter-section">
+                    <h3>Tri</h3>
+                    <select name="order" onchange="updateSearch()">
+                        <option value="updated">Récemment modifié</option>
+                        <option value="created">Récemment créé</option>
+                        <option value="name">Nom A-Z</option>
+                        <option value="interest">Intérêt décroissant</option>
+                    </select>
+                </div>
+
+                <button type="button" class="btn" style="width:100%; margin-top: 8px" onclick="resetFilters()">↻ Reset tous les filtres</button>
+
+            </aside>
+
+            <!-- ── COLONNE DROITE : preview ── -->
+            <main class="filter-main">
+
+                <div class="filter-count-block">
+                    <div class="count-big" id="match-count">—</div>
+                    <div class="count-label">prospects matchent</div>
+                    <div class="count-status muted small" id="count-status">—</div>
+                </div>
+
+                <h3 class="mt-3">Aperçu (5 premiers résultats)</h3>
+                <div class="preview-wrap">
+                    <table class="preview-table" id="preview-table">
+                        <thead>
+                            <tr>
+                                <th>Nom</th>
+                                <th>Entreprise</th>
+                                <th>Cat.</th>
+                                <th>Stage</th>
+                                <th>★</th>
+                                <th>Email</th>
+                                <th>Ville</th>
+                            </tr>
+                        </thead>
+                        <tbody id="preview-tbody">
+                            <tr><td colspan="7" class="empty small">Charge les critères...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="filter-actions">
+                    <button type="button" class="btn" onclick="closeFilterModal()">Annuler</button>
+                    <button type="button" class="btn btn-accent" id="filter-assign-btn" disabled
+                            onclick="assignWithFilters({{ campaign.id }})">
+                        ⚑ Ajouter <span id="filter-assign-count">0</span> prospects à la campagne
+                    </button>
+                </div>
+
+            </main>
+
+        </div>
+    </div>
+</div>
+
+<!-- ═══ Modal : ajouter étape ═══ -->
+<div class="modal-backdrop" id="step-modal" hidden>
+    <div class="modal">
+        <div class="modal-header">
+            <h2>+ Nouvelle étape</h2>
+            <button class="modal-close" onclick="closeStepModal()">×</button>
+        </div>
+        <form id="step-form" onsubmit="return addStep(event, {{ campaign.id }})" style="padding: 18px 22px">
+            <div class="form-grid">
+                <label>N° d'étape
+                    <input type="number" name="step_number" min="1" value="{{ campaign.steps|length + 1 }}" required>
+                </label>
+                <label>Délai (jours)
+                    <input type="number" name="delay_days" min="0" value="0">
+                </label>
+                <label class="span-2">Template à utiliser
+                    <select name="template_id">
+                        <option value="">— Personnalisé (sans template) —</option>
+                        {% for t in templates %}
+                        <option value="{{ t.id }}">
+                            {% if t.segment %}[{{ SEGMENT_LABELS.get(t.segment, t.segment) }}]{% endif %}
+                            {{ t.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label class="span-2">Objet custom (si pas de template)
+                    <input type="text" name="custom_subject"
+                           placeholder="Si vide, prend l'objet du template choisi">
+                </label>
+                <label class="span-2">Corps custom HTML (si pas de template)
+                    <textarea name="custom_body" rows="6"
+                              placeholder="Si vide, prend le corps du template choisi"></textarea>
+                </label>
+                <div class="span-2 row gap-2">
+                    <button type="submit" class="btn btn-accent">Ajouter l'étape</button>
+                    <button type="button" class="btn" onclick="closeStepModal()">Annuler</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<style>
+.steps-list { display: flex; flex-direction: column; gap: 10px; }
+.step-card {
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px 14px;
+    background: var(--bg-3); border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+}
+.step-num {
+    width: 36px; height: 36px;
+    background: var(--lime); color: var(--ink);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--display); font-size: 18px; font-weight: 700;
+    flex-shrink: 0;
+}
+.step-body { flex: 1; }
+.step-meta { font-family: var(--label); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--lime); margin-bottom: 2px; }
+.step-tpl { font-size: 13px; color: var(--cream); }
+</style>
+
+<script>
+function openStepModal() {
+    document.getElementById('step-modal').hidden = false;
+}
+function closeStepModal() {
+    document.getElementById('step-modal').hidden = true;
+}
+
+async function addStep(e, cid) {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const data = Object.fromEntries(fd.entries());
+    // Cast numbers
+    data.step_number = parseInt(data.step_number);
+    data.delay_days = parseInt(data.delay_days);
+    if (data.template_id) data.template_id = parseInt(data.template_id);
+    else delete data.template_id;
+    try {
+        const r = await fetch(`/api/campaigns/${cid}/steps`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data),
+        });
+        const out = await r.json();
+        if (out.ok) {
+            showToast('Étape ajoutée');
+            setTimeout(() => location.reload(), 400);
+        } else {
+            showToast('Erreur : ' + (out.message || out.error));
+        }
+    } catch (err) {
+        showToast('Erreur réseau');
+    }
+    return false;
+}
+
+async function deleteStep(sid) {
+    if (!confirm('Supprimer cette étape ?')) return;
+    const r = await fetch(`/api/campaigns/steps/${sid}`, {method: 'DELETE'});
+    if (r.ok) location.reload();
+}
+
+async function launchCampaign(cid) {
+    if (!confirm("Lancer la campagne ?\n\nLes emails J0 partiront immédiatement à tous les prospects actifs.\nLes suivants selon le calendrier des étapes.")) return;
+    const r = await fetch(`/api/campaigns/${cid}/launch`, {method: 'POST'});
+    const data = await r.json();
+    if (data.ok) {
+        showToast(`Campagne lancée — ${data.scheduled.scheduled} email(s) programmé(s)`);
+        setTimeout(() => location.reload(), 800);
+    } else {
+        showToast(data.message || data.error);
+    }
+}
+
+async function pauseCampaign(cid) {
+    if (!confirm("Mettre en pause la campagne ? Les emails programmés ne partiront plus.")) return;
+    const r = await fetch(`/api/campaigns/${cid}/pause`, {method: 'POST'});
+    if (r.ok) location.reload();
+}
+
+async function resumeCampaign(cid) {
+    const r = await fetch(`/api/campaigns/${cid}/resume`, {method: 'POST'});
+    if (r.ok) location.reload();
+}
+
+async function stopTarget(tid) {
+    if (!confirm("Stopper la séquence pour ce prospect ?")) return;
+    const r = await fetch(`/api/campaigns/targets/${tid}/stop`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({reason: 'manual'}),
+    });
+    if (r.ok) location.reload();
+}
+
+// ─── Sélection avancée prospects ─────────────────────────
+const CAMPAIGN_ID = {{ campaign.id }};
+const CAT_LABELS = {{ CATEGORIES | tojson }};
+const STAGE_LABEL_MAP = {{ STAGE_LABELS | tojson }};
+const STAGE_COLOR_MAP = {{ STAGE_COLORS | tojson }};
+
+function openFilterModal() {
+    document.getElementById('filter-modal').hidden = false;
+    document.body.style.overflow = 'hidden';
+    setTimeout(updateSearch, 50);
+}
+
+function closeFilterModal() {
+    document.getElementById('filter-modal').hidden = true;
+    document.body.style.overflow = '';
+}
+
+function buildFilters() {
+    const f = {};
+    const cats = Array.from(document.querySelectorAll('input[name="categories"]:checked')).map(i => i.value);
+    if (cats.length) f.categories = cats;
+    const stages = Array.from(document.querySelectorAll('input[name="stages"]:checked')).map(i => i.value);
+    if (stages.length) f.stages = stages;
+
+    const iMin = document.querySelector('[name="interest_min"]')?.value;
+    const iMax = document.querySelector('[name="interest_max"]')?.value;
+    if (iMin) f.interest_min = parseInt(iMin);
+    if (iMax) f.interest_max = parseInt(iMax);
+
+    const search = document.querySelector('[name="search"]')?.value.trim();
+    if (search) f.search = search;
+
+    const villesRaw = document.querySelector('[name="villes"]')?.value.trim();
+    if (villesRaw) f.villes = villesRaw.split(',').map(s => s.trim()).filter(Boolean);
+
+    if (document.querySelector('[name="has_email"]')?.checked) f.has_email = true;
+    if (document.querySelector('[name="has_phone"]')?.checked) f.has_phone = true;
+
+    const hasSite = document.querySelector('input[name="has_site"]:checked')?.value;
+    if (hasSite === 'true') f.has_site = true;
+    else if (hasSite === 'false') f.has_site = false;
+
+    const lc = document.querySelector('[name="last_contacted"]')?.value;
+    if (lc) f.last_contacted = lc;
+
+    // Exclusions
+    if (document.querySelector('[name="exclude_in_campaign_id"]')?.checked) {
+        f.exclude_in_campaign_id = CAMPAIGN_ID;
+    }
+    if (document.querySelector('[name="exclude_unsubscribed"]')?.checked) {
+        f.exclude_unsubscribed = true;
+    }
+    if (document.querySelector('[name="exclude_in_other_campaigns"]')?.checked) {
+        f.exclude_in_other_campaigns = true;
+    }
+
+    const order = document.querySelector('[name="order"]')?.value;
+    if (order) f.order = order;
+
+    return f;
+}
+
+let _searchToken = 0;
+let _debounceTimer = null;
+
+function debouncedSearch() {
+    clearTimeout(_debounceTimer);
+    _debounceTimer = setTimeout(updateSearch, 280);
+}
+
+async function updateSearch() {
+    const myToken = ++_searchToken;
+    const filters = buildFilters();
+    document.getElementById('count-status').textContent = 'recherche…';
+
+    try {
+        const r = await fetch('/api/prospects/search', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({filters}),
+        });
+        const data = await r.json();
+        if (myToken !== _searchToken) return; // ignore stale response
+
+        const n = data.count || 0;
+        document.getElementById('match-count').textContent = n.toLocaleString('fr-FR');
+        document.getElementById('count-status').textContent = n === 0 ? 'aucun match avec ces critères' : (n === 1 ? '1 prospect prêt à ajouter' : `${n} prospects prêts à ajouter`);
+        document.getElementById('filter-assign-count').textContent = n;
+        document.getElementById('filter-assign-btn').disabled = (n === 0);
+
+        const tbody = document.getElementById('preview-tbody');
+        if (!data.sample || data.sample.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="empty small">Aucun prospect ne correspond aux critères.</td></tr>';
+        } else {
+            tbody.innerHTML = data.sample.map(p => {
+                const cat = CAT_LABELS[p.categorie] || [p.categorie || '—'];
+                const catCls = (p.categorie || '').replace(/_/g, '-');
+                const stageLabel = STAGE_LABEL_MAP[p.stage] || p.stage || '—';
+                const stageColor = STAGE_COLOR_MAP[p.stage] || '#6B7280';
+                return `<tr>
+                    <td><a href="/prospects/${p.id}" target="_blank">${escapeHtml(p.nom_complet || '')}</a></td>
+                    <td class="small">${escapeHtml(p.entreprise || '')}</td>
+                    <td><span class="badge badge-cat-${catCls}">${escapeHtml(cat[0] || '')}</span></td>
+                    <td><span class="stage-pill" style="background:${stageColor}">${escapeHtml(stageLabel)}</span></td>
+                    <td class="mono">${p.interet || '—'}</td>
+                    <td class="mono small">${escapeHtml(p.email || '—').substring(0, 26)}</td>
+                    <td class="small">${escapeHtml(p.ville || '—')}</td>
+                </tr>`;
+            }).join('');
+        }
+    } catch (e) {
+        document.getElementById('count-status').textContent = 'erreur réseau';
+    }
+}
+
+function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function resetFilters() {
+    document.querySelectorAll('#filter-modal input[type="checkbox"], #filter-modal input[type="radio"]').forEach(i => {
+        if (['exclude_in_campaign_id', 'exclude_unsubscribed'].includes(i.name)) {
+            i.checked = true;
+        } else if (i.name === 'has_site' && i.value === '') {
+            i.checked = true;
+        } else {
+            i.checked = false;
+        }
+    });
+    document.querySelectorAll('#filter-modal input[type="text"]').forEach(i => i.value = '');
+    document.querySelectorAll('#filter-modal select').forEach(s => s.value = s.options[0].value);
+    updateSearch();
+}
+
+function applyPreset(preset) {
+    resetFilters();
+    if (preset === 'hot') {
+        document.querySelector('[name="interest_min"]').value = '4';
+        document.querySelector('[name="interest_max"]').value = '5';
+    } else if (preset === 'never') {
+        document.querySelector('[name="last_contacted"]').value = 'never';
+    } else if (preset === 'sans_site') {
+        document.querySelector('input[name="categories"][value="sans_site"]').checked = true;
+    } else if (preset === 'veillot') {
+        document.querySelector('input[name="categories"][value="avec_site_veillot"]').checked = true;
+    } else if (preset === 'with_phone') {
+        document.querySelector('[name="has_phone"]').checked = true;
+    } else if (preset === 'email_only') {
+        document.querySelector('[name="has_email"]').checked = true;
+    }
+    updateSearch();
+}
+
+async function assignWithFilters(cid) {
+    const filters = buildFilters();
+    const btn = document.getElementById('filter-assign-btn');
+    btn.disabled = true; btn.innerHTML = '⏳ Ajout en cours...';
+    try {
+        const r = await fetch(`/api/campaigns/${cid}/assign`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({filters}),
+        });
+        const data = await r.json();
+        if (data.ok) {
+            showToast(`${data.added} prospect(s) ajouté(s) à la campagne`);
+            closeFilterModal();
+            setTimeout(() => location.reload(), 600);
+        } else {
+            showToast(data.message || data.error || 'Erreur');
+            btn.disabled = false;
+        }
+    } catch (e) {
+        showToast('Erreur réseau');
+        btn.disabled = false;
+    }
+}
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { closeFilterModal(); closeStepModal(); }
+});
+document.getElementById('filter-modal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'filter-modal') closeFilterModal();
+});
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeStepModal();
+});
+document.getElementById('step-modal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'step-modal') closeStepModal();
+});
+</script>
+{% endblock %}
