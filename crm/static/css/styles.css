@@ -170,6 +170,136 @@ input, select, textarea {
     line-height: 1.7;
 }
 
+/* ============================================================
+   Modal (email composer + future modals)
+   ============================================================ */
+.modal-backdrop {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(12, 13, 10, 0.78);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+}
+.modal-backdrop[hidden] { display: none; }
+
+.modal {
+    background: var(--bg-2);
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius);
+    width: 100%; max-width: 720px;
+    max-height: calc(100vh - 48px);
+    overflow-y: auto;
+    box-shadow: var(--shadow-lg);
+}
+
+.modal-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 24px; border-bottom: 1px solid var(--line);
+}
+.modal-header h2 {
+    margin: 0; font-family: var(--display); font-style: italic;
+    font-size: 22px; letter-spacing: -0.01em;
+}
+.modal-close {
+    background: transparent; border: 0; color: var(--fg-dim);
+    font-size: 28px; line-height: 1; cursor: pointer;
+    padding: 0 6px; transition: color 0.15s ease;
+}
+.modal-close:hover { color: var(--lime); }
+
+/* Email composer specific */
+.email-composer form {
+    display: flex; flex-direction: column;
+}
+.composer-meta {
+    padding: 14px 24px; border-bottom: 1px solid var(--line);
+}
+.composer-row {
+    display: flex; align-items: center; gap: 14px;
+    padding: 6px 0;
+    border-bottom: 1px dashed var(--line);
+    font-family: var(--sans);
+    font-size: 13px;
+}
+.composer-row:last-child { border-bottom: 0; }
+.composer-lab {
+    font-family: var(--label);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--fg-dim);
+    font-weight: 600;
+    min-width: 50px;
+}
+.composer-row input {
+    flex: 1;
+    background: transparent;
+    border: 0;
+    color: var(--cream);
+    font-size: 14px;
+    padding: 6px 0;
+    outline: none;
+}
+.composer-row input:focus {
+    box-shadow: none;
+    border-bottom: 1px solid var(--lime);
+}
+.composer-from {
+    flex: 1;
+    color: var(--lime);
+    font-family: var(--mono);
+    font-size: 12.5px;
+}
+#composer-body {
+    width: 100%;
+    padding: 20px 24px;
+    border: 0;
+    background: var(--bg);
+    color: var(--cream);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.7;
+    resize: vertical;
+    min-height: 280px;
+    outline: none;
+}
+#composer-body:focus { box-shadow: none; }
+
+.composer-attachments {
+    padding: 12px 24px;
+    border-top: 1px solid var(--line);
+}
+.files-list {
+    list-style: none;
+    padding: 0;
+    margin: 8px 0 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.files-list li {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 8px;
+    background: var(--bg-3);
+    border-radius: var(--radius-xs);
+    font-size: 12px;
+    color: var(--fg-dim);
+}
+
+.composer-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 24px;
+    border-top: 1px solid var(--line);
+    background: var(--bg-3);
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.composer-info { color: var(--fg-mute); font-size: 11px; flex: 1; }
+.composer-actions { display: flex; gap: 8px; }
+
 /* User chip (logged-in user display in sidebar bottom) */
 .user-chip {
     display: flex;

@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Se désabonner — Mad Makers</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:ital,wght@0,400;1,400&family=Roboto+Mono:wght@400&display=swap">
+<style>
+:root {
+    --bg: #0c0d0a; --bg-2: #141511; --bg-3: #1a1c16;
+    --cream: #f1ece0; --fg-dim: #a4a298; --fg-mute: #6b6a62;
+    --lime: #c8ff3d; --red: #ef6a6a;
+    --line: rgba(241, 236, 224, 0.10); --line-2: rgba(241, 236, 224, 0.18);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: 'Inter', sans-serif;
+    background:
+        radial-gradient(ellipse 60% 50% at 50% 30%, rgba(200,255,61,0.08), transparent 70%),
+        var(--bg);
+    color: var(--cream); min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    padding: 32px 20px; line-height: 1.55;
+}
+.shell {
+    width: 100%; max-width: 520px;
+    background: var(--bg-2); border: 1px solid var(--line-2);
+    border-radius: 14px; padding: 44px 40px;
+}
+.brand {
+    text-align: center; margin-bottom: 28px;
+    font-family: 'Playfair Display', serif; font-style: italic;
+    font-size: 32px; letter-spacing: -0.02em; color: var(--cream);
+}
+.brand small {
+    display: block; font-family: 'Roboto Mono', monospace; font-style: normal;
+    font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--fg-mute); margin-top: 6px;
+}
+h2 {
+    font-family: 'Playfair Display', serif; font-weight: 400;
+    font-size: 22px; margin-bottom: 12px;
+}
+p { color: var(--fg-dim); font-size: 14px; margin-bottom: 14px; }
+.email-badge {
+    display: inline-block; padding: 6px 14px;
+    background: var(--bg-3); border: 1px solid var(--line-2);
+    border-radius: 999px; font-family: 'Roboto Mono', monospace;
+    font-size: 13px; color: var(--cream);
+    margin: 8px 0 16px;
+}
+label {
+    display: block; margin: 16px 0 6px;
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--fg-dim); font-weight: 600;
+}
+textarea {
+    width: 100%; padding: 12px 14px; min-height: 80px;
+    background: var(--bg-3); border: 1px solid var(--line-2);
+    border-radius: 8px; color: var(--cream);
+    font-family: inherit; font-size: 14px; resize: vertical;
+}
+textarea:focus {
+    outline: none; border-color: var(--lime);
+    box-shadow: 0 0 0 3px rgba(200,255,61,0.15);
+}
+.btn {
+    display: inline-block; padding: 13px 26px; margin-top: 16px;
+    border: 0; border-radius: 999px; cursor: pointer;
+    font-family: 'Inter', sans-serif; font-weight: 700;
+    font-size: 12.5px; text-transform: uppercase; letter-spacing: 0.08em;
+}
+.btn-confirm { background: var(--lime); color: var(--bg); }
+.btn-confirm:hover { box-shadow: 0 8px 18px rgba(200,255,61,0.25); }
+.alert {
+    padding: 14px 16px; border-radius: 8px; border-left: 3px solid;
+    margin: 16px 0; font-size: 14px;
+}
+.alert-success { background: rgba(200,255,61,0.10); border-color: var(--lime); color: #e9ffb6; }
+.alert-error { background: rgba(239,106,106,0.12); border-color: var(--red); color: #ffcfcf; }
+.muted-foot {
+    text-align: center; margin-top: 26px;
+    font-family: 'Roboto Mono', monospace; font-size: 10px;
+    letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg-mute);
+}
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+    <div class="brand">
+        Mad Makers
+        <small>Désabonnement</small>
+    </div>
+
+    {% if state == "confirm" %}
+        <h2>Se désabonner ?</h2>
+        <p>Tu vas être retiré(e) de toutes nos communications commerciales. Aucun email Mad Makers ne te sera plus envoyé à cette adresse.</p>
+        <div class="email-badge">{{ email }}</div>
+
+        <form method="POST" action="{{ url_for('public_unsubscribe', token=token) }}">
+            <label>Une raison ? (optionnel, mais on apprécie)</label>
+            <textarea name="reason" placeholder="ex : pas le bon moment, déjà équipé, plus dans la cible..."></textarea>
+            <button type="submit" class="btn btn-confirm">Confirmer le désabonnement</button>
+        </form>
+
+    {% elif state == "confirmed" %}
+        <h2>C'est fait.</h2>
+        <p>L'adresse <b>{{ email }}</b> ne recevra plus aucun email de Mad Makers.</p>
+        <div class="alert alert-success">
+            Désabonnement enregistré le {{ "now" }}.<br>
+            Aucune action supplémentaire de votre part n'est nécessaire.
+        </div>
+        <p style="margin-top: 18px; font-size: 13px;">Si tu changes d'avis plus tard, écris-nous à <a href="mailto:contact@mad-makers.fr" style="color: var(--lime);">contact@mad-makers.fr</a>.</p>
+
+    {% elif state == "already" %}
+        <h2>Déjà désabonné.</h2>
+        <p>L'adresse <b>{{ email }}</b> est déjà désinscrite de nos communications. Rien à faire.</p>
+
+    {% elif state == "expired" %}
+        <h2>Lien expiré.</h2>
+        <p>Ce lien n'est plus valide. Si tu souhaites te désabonner, envoie-nous un mail à <a href="mailto:contact@mad-makers.fr" style="color: var(--lime);">contact@mad-makers.fr</a> et on le fera manuellement.</p>
+
+    {% elif state == "invalid" %}
+        <h2>Lien invalide.</h2>
+        <p>Ce lien semble corrompu. Si le problème persiste, contacte-nous à <a href="mailto:contact@mad-makers.fr" style="color: var(--lime);">contact@mad-makers.fr</a>.</p>
+    {% endif %}
+
+</div>
+
+<div style="text-align: center; margin-top: 30px; font-family: 'Roboto Mono', monospace; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--fg-mute);">
+    Mad Makers · mad-makers.fr
+</div>
+
+</body>
+</html>

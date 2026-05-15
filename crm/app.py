@@ -47,12 +47,19 @@ def _load_user(user_id):
 app.register_blueprint(auth_bp)
 
 
+# Limite upload total (pièces jointes) — Resend autorise jusqu'à ~40 Mo total
+app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024  # 25 Mo
+
+
 # ── Global auth guard : tout exige login sauf /auth/* et /static/*
+PUBLIC_ENDPOINTS = {"auth", "static", "public_unsubscribe"}
+
+
 @app.before_request
 def _require_login_everywhere():
-    # Endpoints exempts (préfixes "auth." du blueprint + "static")
     endpoint = request.endpoint or ""
-    if endpoint.startswith("auth.") or endpoint == "static":
+    # Endpoints exempts (blueprint auth.*, static, unsubscribe public)
+    if endpoint == "static" or endpoint.startswith("auth.") or endpoint == "public_unsubscribe":
         return None
     if current_user.is_authenticated:
         return None
@@ -364,6 +371,160 @@ def api_audit(pid):
                           f"Technos: {', '.join(audit.get('technos', []))}",
                           user_id=current_user.id)
     return jsonify(audit)
+
+
+# ── Routes : Emails (manuels) ─────────────────────────────────
+
+
+def _make_unsubscribe_url(prospect_email: str, prospect_id: int) -> str:
+    """Génère un lien de désinscription signé."""
+    from itsdangerous import URLSafeTimedSerializer
+    secret = os.getenv("FLASK_SECRET_KEY")
+    s = URLSafeTimedSerializer(secret)
+    token = s.dumps({"email": prospect_email, "pid": prospect_id}, salt="unsub")
+    base = os.getenv("APP_BASE_URL", request.host_url.rstrip("/"))
+    return f"{base}/unsubscribe/{token}"
+
+
+@app.route("/api/prospects/<int:pid>/email/send", methods=["POST"])
+def api_send_email(pid):
+    """Envoi d'email manuel depuis fiche prospect.
+    Accepte multipart/form-data : to, subject, body_html (et fichiers via 'attachments')."""
+    import logging
+    from . import email_sender as ES
+
+    log = logging.getLogger(__name__)
+    p = M.get_prospect(pid)
+    if not p:
+        return jsonify({"error": "not_found"}), 404
+
+    to_email = (request.form.get("to") or p.get("email") or "").strip()
+    subject  = (request.form.get("subject") or "").strip()
+    body_html = (request.form.get("body_html") or "").strip()
+
+    if not to_email or "@" not in to_email:
+        return jsonify({"error": "to_email_invalid"}), 400
+    if not subject:
+        return jsonify({"error": "subject_required"}), 400
+    if not body_html:
+        return jsonify({"error": "body_required"}), 400
+
+    # RGPD : block if unsubscribed
+    if M.is_unsubscribed(to_email):
+        return jsonify({
+            "error": "unsubscribed",
+            "message": f"{to_email} s'est désabonné. Envoi bloqué pour respect RGPD."
+        }), 403
+
+    # From logic : user.email @mad-makers.fr → as user ; else contact@... + reply-to user
+    from_email, from_name, reply_to = ES.resolve_from_email(
+        current_user.email, current_user.full_name
+    )
+
+    # Attachments (multipart files)
+    attachments = []
+    attachments_info = []
+    for f in request.files.getlist("attachments"):
+        if not f or not f.filename:
+            continue
+        content = f.read()
+        attachments.append({
+            "filename": f.filename,
+            "content": content,
+            "content_type": f.content_type or "application/octet-stream",
+        })
+        attachments_info.append({"filename": f.filename, "size_kb": round(len(content) / 1024, 1)})
+
+    unsub_url = _make_unsubscribe_url(to_email, pid)
+
+    try:
+        resp = ES.send_compose_email(
+            from_email=from_email,
+            from_name=from_name,
+            reply_to=reply_to,
+            to_email=to_email,
+            subject=subject,
+            body_html=body_html,
+            attachments=attachments or None,
+            unsubscribe_url=unsub_url,
+        )
+        msg_id = resp.get("id") if isinstance(resp, dict) else None
+
+        # Log en DB
+        M.log_email_sent(
+            prospect_id=pid, user_id=current_user.id,
+            from_email=from_email, from_name=from_name, to_email=to_email,
+            reply_to=reply_to, subject=subject, body=body_html, body_html=body_html,
+            resend_message_id=msg_id, attachments_info=attachments_info, status="sent",
+        )
+
+        # Activity timeline
+        body_log = f"À : {to_email}"
+        if attachments_info:
+            body_log += f"\nPJ : {', '.join(a['filename'] for a in attachments_info)}"
+        M.create_activity(
+            pid, "email", f"Email envoyé — {subject[:60]}",
+            body_log, user_id=current_user.id,
+        )
+
+        # Bump last_contacted_at
+        M.update_prospect(pid, {"last_contacted_at": datetime.utcnow().isoformat()})
+
+        return jsonify({"ok": True, "message_id": msg_id})
+
+    except Exception as e:
+        log.exception("send email failed")
+        M.log_email_sent(
+            prospect_id=pid, user_id=current_user.id,
+            from_email=from_email, from_name=from_name, to_email=to_email,
+            reply_to=reply_to, subject=subject, body=body_html, body_html=body_html,
+            attachments_info=attachments_info, status="failed", error=str(e),
+        )
+        return jsonify({"error": "send_failed", "message": str(e)}), 500
+
+
+# ── Routes : Unsubscribe (public, no auth) ────────────────────
+
+
+@app.route("/unsubscribe/<token>", methods=["GET", "POST"])
+def public_unsubscribe(token):
+    """Page publique de désabonnement (lien dans chaque email)."""
+    from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+
+    secret = os.getenv("FLASK_SECRET_KEY")
+    s = URLSafeTimedSerializer(secret)
+    try:
+        data = s.loads(token, salt="unsub")
+    except SignatureExpired:
+        return render_template("unsubscribe.html", state="expired"), 410
+    except BadSignature:
+        return render_template("unsubscribe.html", state="invalid"), 400
+
+    email = data.get("email", "").strip().lower()
+    pid = data.get("pid")
+
+    if request.method == "POST":
+        reason = (request.form.get("reason") or "").strip()
+        ua = request.headers.get("User-Agent", "")[:200]
+        M.add_unsubscribe(email, prospect_id=pid, reason=reason, user_agent=ua)
+        # Log activity sur le prospect si on a un pid
+        if pid:
+            try:
+                M.create_activity(pid, "note", "Désabonnement RGPD",
+                                  f"L'email {email} s'est désabonné. Raison : {reason or '(non précisée)'}")
+            except Exception:
+                pass
+        return render_template("unsubscribe.html", state="confirmed", email=email)
+
+    already = M.is_unsubscribed(email)
+    return render_template("unsubscribe.html",
+                           state="already" if already else "confirm",
+                           email=email, token=token)
+
+
+# Exempt public_unsubscribe du global auth guard (déclaré APRÈS before_request,
+# on doit donc tester explicitement)
+# → géré dans _require_login_everywhere ci-dessous (endpoint 'public_unsubscribe')
 
 
 # ── Routes : Pipeline kanban ──────────────────────────────────

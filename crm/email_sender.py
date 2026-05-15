@@ -39,6 +39,106 @@ def _send(to_email: str, subject: str, html: str, text: Optional[str] = None) ->
         raise
 
 
+# ─── Compose & send (utilisé par /api/prospects/<id>/email/send) ───
+
+
+MAD_MAKERS_DOMAIN = "mad-makers.fr"
+DEFAULT_SENDER_EMAIL = "contact@mad-makers.fr"
+
+
+def resolve_from_email(user_email: str, user_full_name: str = "") -> tuple[str, str, str]:
+    """Détermine le From email + name + Reply-To selon l'user.
+
+    - Si user.email finit par @mad-makers.fr  → From = user.email, Reply-To = same
+    - Sinon                                    → From = contact@mad-makers.fr, Reply-To = user.email
+    Returns: (from_email, from_name, reply_to)
+    """
+    user_email = (user_email or "").strip().lower()
+    name = (user_full_name or "").strip() or user_email.split("@")[0].title()
+
+    if user_email.endswith(f"@{MAD_MAKERS_DOMAIN}"):
+        return (user_email, name, user_email)
+    return (DEFAULT_SENDER_EMAIL, name, user_email)
+
+
+def render_unsubscribe_footer_html(unsubscribe_url: str) -> str:
+    """Footer RGPD obligatoire dans chaque email commercial."""
+    return f"""
+    <hr style="border: 0; border-top: 1px solid #d8d4c8; margin: 32px 0 16px;">
+    <p style="font-family: Arial, sans-serif; font-size: 11px; line-height: 1.5; color: #888;">
+        Vous recevez cet email parce que vos coordonnées professionnelles sont
+        listées publiquement (LinkedIn / annuaires). Si cela ne vous intéresse
+        pas, vous pouvez vous désabonner ici :<br>
+        <a href="{unsubscribe_url}" style="color: #666; text-decoration: underline;">Se désabonner de toute communication Mad Makers</a><br><br>
+        Mad Makers · contact@mad-makers.fr · mad-makers.fr
+    </p>
+    """
+
+
+def render_unsubscribe_footer_text(unsubscribe_url: str) -> str:
+    return (
+        "\n\n---\n"
+        "Vous recevez cet email parce que vos coordonnées professionnelles sont "
+        "listées publiquement. Pour vous désabonner :\n"
+        f"{unsubscribe_url}\n\n"
+        "Mad Makers · contact@mad-makers.fr"
+    )
+
+
+def send_compose_email(
+    *,
+    from_email: str,
+    from_name: str,
+    reply_to: Optional[str],
+    to_email: str,
+    subject: str,
+    body_html: str,
+    text: Optional[str] = None,
+    attachments: Optional[list] = None,
+    unsubscribe_url: Optional[str] = None,
+) -> dict:
+    """Envoi d'email composé manuellement depuis le CRM.
+
+    attachments : liste de dicts {filename, content (bytes), content_type}
+    unsubscribe_url : si fourni, footer RGPD inséré automatiquement
+    """
+    _init_resend()
+
+    # Auto footer RGPD
+    if unsubscribe_url:
+        body_html = body_html + render_unsubscribe_footer_html(unsubscribe_url)
+        if text:
+            text = text + render_unsubscribe_footer_text(unsubscribe_url)
+
+    sender = f"{from_name} <{from_email}>" if from_name else from_email
+    params = {
+        "from":    sender,
+        "to":      [to_email],
+        "subject": subject,
+        "html":    body_html,
+    }
+    if reply_to and reply_to != from_email:
+        params["reply_to"] = [reply_to]
+    if text:
+        params["text"] = text
+
+    # Pièces jointes : Resend SDK accepte une liste de dicts {filename, content (base64 OR bytes)}
+    if attachments:
+        import base64
+        params["attachments"] = []
+        for att in attachments:
+            content = att["content"]
+            if isinstance(content, bytes):
+                content = base64.b64encode(content).decode("ascii")
+            params["attachments"].append({
+                "filename":     att["filename"],
+                "content":      content,
+                "content_type": att.get("content_type", "application/octet-stream"),
+            })
+
+    return resend.Emails.send(params)
+
+
 # ─── Templates HTML inline (cohérents avec Mad Makers branding) ───
 
 

@@ -260,6 +260,51 @@ def create_email(prospect_id, sequence_step, subject, body, status="draft", sche
     )
 
 
+def log_email_sent(*, prospect_id, user_id, from_email, from_name, to_email,
+                   reply_to, subject, body, body_html,
+                   resend_message_id=None, sequence_step="manual",
+                   attachments_info=None, error=None, status="sent"):
+    """Log un email envoyé (ou échoué) en DB. Retourne id."""
+    sent_at = datetime.utcnow().isoformat() if status == "sent" else None
+    return execute(
+        """INSERT INTO emails
+           (prospect_id, created_by_user_id, sequence_step,
+            from_email, from_name, to_email, reply_to,
+            subject, body, body_html, attachments_json,
+            status, sent_at, resend_message_id, error_message)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (prospect_id, user_id, sequence_step,
+         from_email, from_name, to_email, reply_to,
+         subject, body, body_html,
+         json.dumps(attachments_info, ensure_ascii=False) if attachments_info else None,
+         status, sent_at, resend_message_id, error)
+    )
+
+
+# ─── Unsubscribes (RGPD) ─────────────────────────────────────
+
+
+def is_unsubscribed(email: str) -> bool:
+    if not email:
+        return False
+    row = query_one("SELECT id FROM unsubscribes WHERE LOWER(email) = LOWER(?)", (email.strip(),))
+    return bool(row)
+
+
+def add_unsubscribe(email: str, prospect_id=None, reason: str = "", user_agent: str = ""):
+    if not email:
+        return None
+    # UPSERT : si déjà désabonné, ne fait rien
+    existing = query_one("SELECT id FROM unsubscribes WHERE LOWER(email) = LOWER(?)", (email.strip(),))
+    if existing:
+        return existing["id"]
+    return execute(
+        """INSERT INTO unsubscribes (email, prospect_id, reason, user_agent)
+           VALUES (?, ?, ?, ?)""",
+        (email.strip().lower(), prospect_id, reason or "", user_agent or ""),
+    )
+
+
 def mark_email_sent(email_id):
     execute(
         "UPDATE emails SET status = 'sent', sent_at = ? WHERE id = ?",

@@ -128,21 +128,42 @@ CREATE TABLE IF NOT EXISTS activities (
 CREATE INDEX IF NOT EXISTS idx_act_prospect  ON activities(prospect_id);
 CREATE INDEX IF NOT EXISTS idx_act_due       ON activities(due_at);
 
--- ── Emails (sequences) ───────────────────────────────────────
+-- ── Emails (manuels + campagnes) ─────────────────────────────
 CREATE TABLE IF NOT EXISTS emails (
     id              BIGSERIAL PRIMARY KEY,
     prospect_id     BIGINT NOT NULL REFERENCES prospects(id) ON DELETE CASCADE,
     created_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
-    sequence_step   TEXT NOT NULL,
+    sequence_step   TEXT NOT NULL DEFAULT 'manual',  -- manual / J0 / J+4 / J+10 / J+18 / custom
+    from_email      TEXT,                             -- noreply@... ou user@mad-makers.fr
+    from_name       TEXT,
+    to_email        TEXT,
+    reply_to        TEXT,
     subject         TEXT,
     body            TEXT,
-    status          TEXT NOT NULL DEFAULT 'draft',
+    body_html       TEXT,                             -- version HTML rendue (avec footer RGPD)
+    attachments_json TEXT,                            -- JSON list of {filename, size_kb}
+    status          TEXT NOT NULL DEFAULT 'draft',    -- draft / scheduled / sent / failed / opened / replied
     scheduled_at    TIMESTAMPTZ,
     sent_at         TIMESTAMPTZ,
     opened_at       TIMESTAMPTZ,
     replied_at      TIMESTAMPTZ,
+    resend_message_id TEXT,
+    error_message   TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_emails_prospect ON emails(prospect_id);
-CREATE INDEX IF NOT EXISTS idx_emails_status   ON emails(status);
+CREATE INDEX IF NOT EXISTS idx_emails_prospect  ON emails(prospect_id);
+CREATE INDEX IF NOT EXISTS idx_emails_status    ON emails(status);
+CREATE INDEX IF NOT EXISTS idx_emails_scheduled ON emails(scheduled_at) WHERE status = 'scheduled';
+
+-- ── Unsubscribes (RGPD : opt-out global par email) ──────────
+CREATE TABLE IF NOT EXISTS unsubscribes (
+    id              BIGSERIAL PRIMARY KEY,
+    email           TEXT NOT NULL UNIQUE,
+    prospect_id     BIGINT REFERENCES prospects(id) ON DELETE SET NULL,
+    reason          TEXT,
+    user_agent      TEXT,
+    unsubscribed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_unsubs_email ON unsubscribes(email);

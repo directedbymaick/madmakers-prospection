@@ -97,21 +97,66 @@ def init_db():
 
 def _run_migrations(cur):
     """ALTER TABLE idempotent pour ajouter colonnes manquantes sur DB existante."""
-    # created_by_user_id sur activities, calls, audits, emails
     additions = [
+        # created_by_user_id sur activities, calls, audits, emails
         ("activities", "created_by_user_id", "BIGINT REFERENCES users(id) ON DELETE SET NULL"),
         ("calls",      "created_by_user_id", "BIGINT REFERENCES users(id) ON DELETE SET NULL"),
         ("audits",     "created_by_user_id", "BIGINT REFERENCES users(id) ON DELETE SET NULL"),
         ("emails",     "created_by_user_id", "BIGINT REFERENCES users(id) ON DELETE SET NULL"),
+        # Email composer extensions
+        ("emails", "from_email",       "TEXT"),
+        ("emails", "from_name",        "TEXT"),
+        ("emails", "to_email",         "TEXT"),
+        ("emails", "reply_to",         "TEXT"),
+        ("emails", "body_html",        "TEXT"),
+        ("emails", "attachments_json", "TEXT"),
+        ("emails", "resend_message_id","TEXT"),
+        ("emails", "error_message",    "TEXT"),
     ]
     for tbl, col, typ in additions:
-        cur.execute(f"""
+        cur.execute("""
             SELECT column_name FROM information_schema.columns
             WHERE table_schema='public' AND table_name=%s AND column_name=%s
         """, (tbl, col))
         if not cur.fetchone():
             cur.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {typ}")
             log.info(f"Migration : {tbl}.{col} ajouté")
+
+    # sequence_step doit avoir un default (pour les sends manuels qui n'ont pas de step)
+    cur.execute("""
+        SELECT column_default FROM information_schema.columns
+        WHERE table_schema='public' AND table_name='emails' AND column_name='sequence_step'
+    """)
+    row = cur.fetchone()
+    if row and not row.get("column_default"):
+        cur.execute("ALTER TABLE emails ALTER COLUMN sequence_step SET DEFAULT 'manual'")
+
+    # Table unsubscribes (RGPD)
+    cur.execute("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_schema='public' AND table_name='unsubscribes'
+    """)
+    if not cur.fetchone():
+        cur.execute("""
+            CREATE TABLE unsubscribes (
+                id              BIGSERIAL PRIMARY KEY,
+                email           TEXT NOT NULL UNIQUE,
+                prospect_id     BIGINT REFERENCES prospects(id) ON DELETE SET NULL,
+                reason          TEXT,
+                user_agent      TEXT,
+                unsubscribed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """)
+        cur.execute("CREATE INDEX idx_unsubs_email ON unsubscribes(email)")
+        log.info("Table unsubscribes créée")
+
+    # Index emails scheduled (pour cron worker)
+    cur.execute("""
+        SELECT indexname FROM pg_indexes
+        WHERE schemaname='public' AND indexname='idx_emails_scheduled'
+    """)
+    if not cur.fetchone():
+        cur.execute("CREATE INDEX idx_emails_scheduled ON emails(scheduled_at) WHERE status='scheduled'")
 
 
 def query(sql, params=()):
