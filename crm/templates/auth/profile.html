@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Profil — Mad Makers CRM{% endblock %}
+{% block page_title %}Profil{% endblock %}
+
+{% block content %}
+
+<div class="card" style="max-width: 600px">
+    <h2>{{ current_user.full_name or current_user.email }}</h2>
+    <p class="muted small">{{ current_user.email }} · <span class="badge">{{ current_user.role }}</span></p>
+
+    <hr class="hr">
+
+    <div class="audit-grid">
+        <div class="audit-row">
+            <span class="lab">Email</span>
+            <span class="val">{{ current_user.email }}</span>
+        </div>
+        <div class="audit-row">
+            <span class="lab">Email vérifié</span>
+            <span class="val">{% if current_user.email_verified %}✓ Oui{% else %}✗ Non{% endif %}</span>
+        </div>
+        <div class="audit-row">
+            <span class="lab">Rôle</span>
+            <span class="val">{{ current_user.role }}</span>
+        </div>
+        <div class="audit-row">
+            <span class="lab">Compte créé</span>
+            <span class="val">{{ current_user.created_at | relative }}</span>
+        </div>
+        <div class="audit-row">
+            <span class="lab">Dernière connexion</span>
+            <span class="val">{% if current_user.last_login_at %}{{ current_user.last_login_at | relative }}{% else %}—{% endif %}</span>
+        </div>
+    </div>
+
+    <hr class="hr">
+
+    <div class="row gap-2">
+        <a href="{{ url_for('auth.forgot') }}" class="btn">Changer le mot de passe</a>
+        <a href="{{ url_for('auth.logout') }}" class="btn btn-danger">Se déconnecter</a>
+    </div>
+</div>
+
+{% endblock %}

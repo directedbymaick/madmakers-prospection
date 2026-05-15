@@ -1,0 +1,34 @@
+{% extends "auth/_auth_layout.html" %}
+{% block title %}Vérifie ton email — Mad Makers CRM{% endblock %}
+
+{% block content %}
+
+<div style="text-align: center; padding: 20px 0;">
+    <div style="font-size: 48px; margin-bottom: 16px;">📬</div>
+    <h2 class="auth-title">Vérifie ta boite mail</h2>
+    <p class="auth-subtitle">
+        On vient d'envoyer un lien de vérification à<br>
+        <b style="color: var(--cream);">{{ email }}</b>
+    </p>
+</div>
+
+<div class="flash info" style="text-align: left;">
+    <b>Étapes suivantes :</b>
+    <ol style="margin: 8px 0 0 20px; padding: 0; line-height: 1.7;">
+        <li>Ouvre l'email "Active ton compte — Mad Makers CRM"</li>
+        <li>Clique sur le bouton "Activer mon compte"</li>
+        <li>Reviens ici pour te connecter</li>
+    </ol>
+</div>
+
+<p style="margin-top: 18px; font-size: 12.5px; color: var(--fg-mute); text-align: center;">
+    L'email peut prendre quelques minutes. Pense à vérifier tes spams.
+</p>
+
+<div class="auth-links">
+    Pas reçu ? <a href="{{ url_for('auth.resend_verification') }}">Renvoyer le lien</a>
+    <span class="sep">·</span>
+    <a href="{{ url_for('auth.login') }}">Retour login</a>
+</div>
+
+{% endblock %}

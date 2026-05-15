@@ -1,0 +1,23 @@
+{% extends "auth/_auth_layout.html" %}
+{% block title %}Nouveau mot de passe — Mad Makers CRM{% endblock %}
+
+{% block content %}
+
+<h2 class="auth-title">Nouveau mot de passe</h2>
+<p class="auth-subtitle">Choisis un nouveau mot de passe. Minimum 8 caractères, 1 majuscule, 1 chiffre.</p>
+
+<form class="auth-form" method="POST" action="{{ url_for('auth.reset', token=token) }}">
+    <label>Nouveau mot de passe
+        <input type="password" name="password" autocomplete="new-password" required minlength="8" autofocus>
+    </label>
+    <label>Confirme le nouveau mot de passe
+        <input type="password" name="password2" autocomplete="new-password" required minlength="8">
+    </label>
+    <button type="submit" class="auth-submit">Définir le nouveau mot de passe</button>
+</form>
+
+<div class="auth-links">
+    <a href="{{ url_for('auth.login') }}">Retour login</a>
+</div>
+
+{% endblock %}

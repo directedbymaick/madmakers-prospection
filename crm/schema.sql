@@ -5,6 +5,23 @@
 PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
 
+-- ── Users (auth) ─────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS users (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    email           TEXT NOT NULL UNIQUE,
+    password_hash   TEXT NOT NULL,
+    full_name       TEXT,
+    role            TEXT NOT NULL DEFAULT 'user',   -- user / admin
+    email_verified  INTEGER NOT NULL DEFAULT 0,     -- 0/1
+    is_active       INTEGER NOT NULL DEFAULT 1,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_login_at   TIMESTAMP,
+    verification_sent_at TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+
 -- ── Prospects (table maître) ─────────────────────────────────
 CREATE TABLE IF NOT EXISTS prospects (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,

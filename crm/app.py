@@ -1,11 +1,20 @@
 """crm.app — Flask app + routes."""
 import json
+import os
 from datetime import datetime
 from pathlib import Path
+
+from dotenv import load_dotenv
 from flask import Flask, render_template, request, redirect, url_for, jsonify, abort
+from flask_login import LoginManager, login_required, current_user
+
+# Charge .env AVANT d'importer modules qui en dépendent
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 from .db import init_db
 from . import models as M
+from . import auth as A
+from .auth_routes import auth_bp
 from .config import (
     STAGES, STAGE_KEYS, STAGE_LABELS, STAGE_COLORS,
     CATEGORIES, ACTIVITY_TYPES, TEMPLATES, STATIC,
@@ -15,6 +24,44 @@ app = Flask(__name__,
             template_folder=str(TEMPLATES),
             static_folder=str(STATIC))
 app.config["TEMPLATES_AUTO_RELOAD"] = True
+app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "dev-key-change-me")
+app.config["SESSION_COOKIE_SECURE"] = False  # True en prod HTTPS
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["REMEMBER_COOKIE_DURATION"] = 60 * 60 * 24 * 30   # 30 jours
+
+# ── Flask-Login setup ────────────────────────────────────────
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = "auth.login"
+login_manager.login_message = "Tu dois te connecter pour accéder à cette page."
+login_manager.login_message_category = "info"
+
+
+@login_manager.user_loader
+def _load_user(user_id):
+    return A.get_user_by_id(user_id)
+
+
+# ── Blueprints ───────────────────────────────────────────────
+app.register_blueprint(auth_bp)
+
+
+# ── Global auth guard : tout exige login sauf /auth/* et /static/*
+@app.before_request
+def _require_login_everywhere():
+    # Endpoints exempts (préfixes "auth." du blueprint + "static")
+    endpoint = request.endpoint or ""
+    if endpoint.startswith("auth.") or endpoint == "static":
+        return None
+    if current_user.is_authenticated:
+        return None
+    # AJAX/API → 401 JSON pour que le front gère proprement
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "auth_required"}), 401
+    return redirect(url_for("auth.login", next=request.full_path if request.path != "/" else None))
+
+
 app.jinja_env.globals.update(
     STAGES=STAGES,
     STAGE_KEYS=STAGE_KEYS,

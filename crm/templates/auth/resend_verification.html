@@ -1,0 +1,20 @@
+{% extends "auth/_auth_layout.html" %}
+{% block title %}Renvoyer le lien de vérification — Mad Makers CRM{% endblock %}
+
+{% block content %}
+
+<h2 class="auth-title">Renvoyer le lien</h2>
+<p class="auth-subtitle">Entre ton email, on te renvoie un lien de vérification si un compte non-vérifié existe.</p>
+
+<form class="auth-form" method="POST" action="{{ url_for('auth.resend_verification') }}">
+    <label>Email
+        <input type="email" name="email" autocomplete="email" required autofocus>
+    </label>
+    <button type="submit" class="auth-submit">Renvoyer le lien</button>
+</form>
+
+<div class="auth-links">
+    <a href="{{ url_for('auth.login') }}">Retour login</a>
+</div>
+
+{% endblock %}

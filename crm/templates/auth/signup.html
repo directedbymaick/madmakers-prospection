@@ -1,0 +1,34 @@
+{% extends "auth/_auth_layout.html" %}
+{% block title %}Créer un compte — Mad Makers CRM{% endblock %}
+
+{% block content %}
+
+<h2 class="auth-title">Créer un compte</h2>
+<p class="auth-subtitle">Accès réservé aux membres de l'équipe Mad Makers. Un email de vérification te sera envoyé.</p>
+
+<form class="auth-form" method="POST" action="{{ url_for('auth.signup') }}">
+    <label>Nom complet
+        <input type="text" name="full_name" autocomplete="name" required
+               placeholder="ex : Maïck Damatu"
+               value="{{ form.full_name or '' }}">
+    </label>
+    <label>Email Mad Makers
+        <input type="email" name="email" autocomplete="email" required
+               placeholder="prenom@mad-makers.fr"
+               value="{{ form.email or '' }}">
+    </label>
+    <label>Mot de passe
+        <input type="password" name="password" autocomplete="new-password" required
+               minlength="8" placeholder="min 8 caractères, 1 majuscule, 1 chiffre">
+    </label>
+    <label>Confirme le mot de passe
+        <input type="password" name="password2" autocomplete="new-password" required minlength="8">
+    </label>
+    <button type="submit" class="auth-submit">Créer mon compte</button>
+</form>
+
+<div class="auth-links">
+    Déjà un compte ? <a href="{{ url_for('auth.login') }}">Se connecter</a>
+</div>
+
+{% endblock %}

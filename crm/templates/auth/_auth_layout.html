@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Mad Makers CRM{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600;1,700&family=Montserrat:wght@500;600;700&family=Roboto+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+<style>
+body {
+    background:
+        radial-gradient(ellipse 60% 50% at 50% 30%, rgba(200, 255, 61, 0.10), transparent 70%),
+        var(--bg);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 20px;
+}
+.auth-shell {
+    width: 100%;
+    max-width: 440px;
+    background: var(--bg-2);
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius);
+    padding: 40px 36px;
+    box-shadow: var(--shadow);
+    position: relative;
+}
+.auth-brand {
+    text-align: center;
+    margin-bottom: 28px;
+}
+.auth-brand h1 {
+    font-family: var(--display);
+    font-style: italic;
+    font-weight: 400;
+    font-size: 32px;
+    letter-spacing: -0.02em;
+    color: var(--cream);
+    margin: 0;
+}
+.auth-brand .eyebrow {
+    justify-content: center;
+    margin-top: 6px;
+    margin-bottom: 0;
+}
+.auth-title {
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: 22px;
+    letter-spacing: -0.01em;
+    color: var(--cream);
+    margin-bottom: 8px;
+}
+.auth-subtitle {
+    font-size: 13.5px;
+    color: var(--fg-dim);
+    margin-bottom: 24px;
+    line-height: 1.6;
+}
+.auth-form { display: flex; flex-direction: column; gap: 14px; }
+.auth-form label {
+    font-family: var(--label);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--fg-dim);
+    font-weight: 600;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.auth-form input {
+    padding: 12px 14px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-sm);
+    background: var(--bg-3);
+    color: var(--cream);
+    font-family: var(--sans);
+    font-size: 14px;
+    text-transform: none;
+    letter-spacing: normal;
+}
+.auth-form input:focus {
+    outline: none;
+    border-color: var(--lime);
+    background: var(--bg);
+    box-shadow: 0 0 0 3px var(--lime-soft);
+}
+.auth-form .remember-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--sans);
+    text-transform: none;
+    letter-spacing: normal;
+    color: var(--fg-dim);
+    font-size: 13px;
+    font-weight: 400;
+}
+.auth-form .remember-row input { width: auto; }
+.auth-submit {
+    margin-top: 8px;
+    padding: 14px 24px;
+    background: var(--lime);
+    color: var(--ink);
+    border: 0;
+    border-radius: var(--radius-pill);
+    font-family: var(--label);
+    font-weight: 700;
+    font-size: 12.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.2s ease;
+}
+.auth-submit:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 28px rgba(200, 255, 61, 0.25);
+}
+.auth-links {
+    margin-top: 24px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--fg-dim);
+}
+.auth-links a {
+    color: var(--lime);
+    font-weight: 500;
+}
+.auth-links a:hover { color: var(--cream); }
+.auth-links .sep { color: var(--line-3); margin: 0 8px; }
+
+.flash {
+    margin-bottom: 16px;
+    padding: 12px 14px;
+    border-radius: var(--radius-sm);
+    border-left: 3px solid;
+    font-size: 13px;
+    line-height: 1.55;
+}
+.flash.error   { background: var(--red-soft);   border-color: var(--red);   color: #ffcfcf; }
+.flash.success { background: var(--green-soft); border-color: var(--lime);  color: #e9ffb6; }
+.flash.info    { background: var(--blue-soft);  border-color: var(--blue);  color: #cce8ff; }
+.flash.warning { background: var(--amber-soft); border-color: var(--amber); color: #ffe9b6; }
+
+.auth-footer {
+    text-align: center;
+    margin-top: 30px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--fg-mute);
+}
+</style>
+</head>
+<body>
+
+<div class="auth-shell">
+
+    <div class="auth-brand">
+        <h1>Mad Makers</h1>
+        <div class="eyebrow">CRM</div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, msg in messages %}
+                <div class="flash {{ category }}">{{ msg }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+
+</div>
+
+<div class="auth-footer">© Mad Makers · CRM v0.2</div>
+
+</body>
+</html>

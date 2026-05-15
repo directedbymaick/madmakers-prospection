@@ -1,0 +1,20 @@
+{% extends "auth/_auth_layout.html" %}
+{% block title %}Mot de passe oublié — Mad Makers CRM{% endblock %}
+
+{% block content %}
+
+<h2 class="auth-title">Mot de passe oublié</h2>
+<p class="auth-subtitle">Entre ton email, on t'envoie un lien pour définir un nouveau mot de passe.</p>
+
+<form class="auth-form" method="POST" action="{{ url_for('auth.forgot') }}">
+    <label>Email
+        <input type="email" name="email" autocomplete="email" required autofocus>
+    </label>
+    <button type="submit" class="auth-submit">Envoyer le lien</button>
+</form>
+
+<div class="auth-links">
+    <a href="{{ url_for('auth.login') }}">Retour login</a>
+</div>
+
+{% endblock %}

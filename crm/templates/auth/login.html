@@ -1,0 +1,36 @@
+{% extends "auth/_auth_layout.html" %}
+{% block title %}Connexion — Mad Makers CRM{% endblock %}
+
+{% block content %}
+
+<h2 class="auth-title">Connexion</h2>
+<p class="auth-subtitle">Accède à ton pipeline Mad Makers.</p>
+
+<form class="auth-form" method="POST" action="{{ url_for('auth.login') }}{% if request.args.get('next') %}?next={{ request.args.get('next') }}{% endif %}">
+    <label>Email
+        <input type="email" name="email" autocomplete="email" required autofocus
+               value="{{ form.email or '' }}">
+    </label>
+    <label>Mot de passe
+        <input type="password" name="password" autocomplete="current-password" required>
+    </label>
+    <label class="remember-row">
+        <input type="checkbox" name="remember" value="1">
+        Rester connecté 30 jours
+    </label>
+    <button type="submit" class="auth-submit">Se connecter</button>
+</form>
+
+<div class="auth-links">
+    <a href="{{ url_for('auth.forgot') }}">Mot de passe oublié ?</a>
+    {% if unverified %}
+        <span class="sep">·</span>
+        <a href="{{ url_for('auth.resend_verification') }}">Renvoyer l'email de vérif</a>
+    {% endif %}
+</div>
+
+<div class="auth-links" style="margin-top: 14px;">
+    Pas encore de compte ? <a href="{{ url_for('auth.signup') }}">S'inscrire</a>
+</div>
+
+{% endblock %}
