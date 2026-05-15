@@ -170,6 +170,26 @@ def prospect_detail(pid):
                            calls=calls, activities=activities, emails=emails)
 
 
+@app.route("/api/prospects/delete", methods=["POST"])
+def api_prospects_delete():
+    """Suppression d'un ou plusieurs prospects.
+    Body JSON : {ids: [1, 2, 3]}
+    Les FK CASCADE suppriment automatiquement calls/activities/audits/emails liés.
+    """
+    payload = request.get_json(silent=True) or {}
+    ids = payload.get("ids") or []
+    # Sanitize : ints uniquement
+    ids = [int(i) for i in ids if str(i).isdigit()]
+    if not ids:
+        return jsonify({"error": "no_ids"}), 400
+
+    from .db import execute
+    # Postgres : DELETE ... WHERE id = ANY(%s) — psycopg accepte les listes
+    placeholders = ",".join(["?"] * len(ids))
+    deleted = execute(f"DELETE FROM prospects WHERE id IN ({placeholders})", ids)
+    return jsonify({"ok": True, "deleted": deleted, "ids": ids})
+
+
 @app.route("/prospects/<int:pid>/update", methods=["POST"])
 def prospect_update(pid):
     fields = {}

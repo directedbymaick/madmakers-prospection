@@ -44,6 +44,9 @@
     <table class="table">
         <thead>
             <tr>
+                <th class="col-check">
+                    <input type="checkbox" id="select-all" onchange="toggleSelectAll(this)" title="Tout sélectionner">
+                </th>
                 <th>Nom</th>
                 <th>Entreprise</th>
                 <th>Titre</th>
@@ -53,13 +56,16 @@
                 <th>Intérêt</th>
                 <th>Téléphone</th>
                 <th>Email</th>
-                <th></th>
+                <th class="col-actions"></th>
             </tr>
         </thead>
         <tbody>
             {% for p in prospects %}
             {% set phone = p.phone_mobile or p.phone_office or p.phone_other %}
-            <tr>
+            <tr data-pid="{{ p.id }}">
+                <td class="col-check">
+                    <input type="checkbox" class="row-check" value="{{ p.id }}" onchange="updateSelection()">
+                </td>
                 <td><a href="{{ url_for('prospect_detail', pid=p.id) }}">{{ p.nom_complet }}</a></td>
                 <td>{{ p.entreprise }}</td>
                 <td class="muted small">{{ p.titre[:50] }}{% if p.titre|length > 50 %}…{% endif %}</td>
@@ -85,10 +91,11 @@
                 <td class="mono small">
                     {% if p.email %}<a href="mailto:{{ p.email }}">{{ p.email[:30] }}</a>{% else %}—{% endif %}
                 </td>
-                <td>
+                <td class="col-actions">
                     <form method="POST" action="{{ url_for('call_start', pid=p.id) }}" style="display:inline">
                         <button class="btn btn-sm btn-accent" type="submit" title="Lancer cold call">📞</button>
                     </form>
+                    <button class="btn btn-sm btn-danger" onclick="deleteOne({{ p.id }}, '{{ p.nom_complet | replace("'", "\\'") }}')" title="Supprimer">🗑</button>
                 </td>
             </tr>
             {% endfor %}
@@ -104,4 +111,134 @@
 </div>
 {% endif %}
 
+<!-- Bulk action bar (sticky bottom, apparaît si 1+ checkbox cochée) -->
+<div class="bulk-bar" id="bulk-bar" hidden>
+    <span class="bulk-count"><b id="bulk-count">0</b> prospect<span id="bulk-plural">s</span> sélectionné<span id="bulk-plural2">s</span></span>
+    <div class="bulk-actions">
+        <button class="btn" onclick="clearSelection()">Désélectionner</button>
+        <button class="btn btn-danger" onclick="deleteBulk()">🗑 Supprimer</button>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<style>
+.col-check { width: 32px; padding-left: 12px !important; padding-right: 0 !important; }
+.col-actions { width: 120px; text-align: right; white-space: nowrap; }
+.col-actions .btn { margin-left: 4px; }
+
+.bulk-bar {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--black);
+    color: white;
+    padding: 12px 18px;
+    border-radius: var(--radius);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    box-shadow: var(--shadow-lg);
+    z-index: 50;
+    border: 1px solid rgba(200,255,61,0.30);
+}
+.bulk-bar[hidden] { display: none; }
+.bulk-count {
+    font-family: var(--label);
+    font-size: 12.5px;
+    letter-spacing: 0.04em;
+}
+.bulk-count b {
+    color: var(--lime);
+    font-size: 16px;
+    margin-right: 4px;
+}
+.bulk-actions { display: flex; gap: 8px; }
+</style>
+
+<script>
+function updateSelection() {
+    const checks = document.querySelectorAll('.row-check:checked');
+    const n = checks.length;
+    const bar = document.getElementById('bulk-bar');
+    document.getElementById('bulk-count').textContent = n;
+    document.getElementById('bulk-plural').textContent  = n > 1 ? 's' : '';
+    document.getElementById('bulk-plural2').textContent = n > 1 ? 's' : '';
+    bar.hidden = (n === 0);
+
+    // Sync "select all" indeterminate state
+    const all = document.querySelectorAll('.row-check');
+    const allSel = document.getElementById('select-all');
+    if (n === 0) { allSel.checked = false; allSel.indeterminate = false; }
+    else if (n === all.length) { allSel.checked = true; allSel.indeterminate = false; }
+    else { allSel.checked = false; allSel.indeterminate = true; }
+}
+
+function toggleSelectAll(el) {
+    document.querySelectorAll('.row-check').forEach(c => c.checked = el.checked);
+    updateSelection();
+}
+
+function clearSelection() {
+    document.querySelectorAll('.row-check').forEach(c => c.checked = false);
+    document.getElementById('select-all').checked = false;
+    updateSelection();
+}
+
+async function deleteOne(pid, name) {
+    if (!confirm(`Supprimer définitivement « ${name} » ?\n\nCela supprime aussi tous les calls, activités, emails et audits liés.`)) return;
+    await _deleteIds([pid], () => {
+        const row = document.querySelector(`tr[data-pid="${pid}"]`);
+        if (row) row.remove();
+        showToast('Prospect supprimé');
+    });
+}
+
+async function deleteBulk() {
+    const ids = Array.from(document.querySelectorAll('.row-check:checked')).map(c => parseInt(c.value));
+    if (!ids.length) return;
+    if (!confirm(`Supprimer définitivement ${ids.length} prospect${ids.length>1?'s':''} ?\n\nCela supprime aussi tous les calls, activités, emails et audits liés.`)) return;
+    await _deleteIds(ids, () => {
+        ids.forEach(id => {
+            const row = document.querySelector(`tr[data-pid="${id}"]`);
+            if (row) row.remove();
+        });
+        clearSelection();
+        showToast(`${ids.length} prospect${ids.length>1?'s':''} supprimé${ids.length>1?'s':''}`);
+    });
+}
+
+async function _deleteIds(ids, onSuccess) {
+    try {
+        const r = await fetch('/api/prospects/delete', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ids: ids}),
+        });
+        const data = await r.json();
+        if (data.ok) onSuccess();
+        else showToast('Erreur : ' + (data.message || data.error));
+    } catch (e) {
+        showToast('Erreur réseau : ' + e.message);
+    }
+}
+
+// Keyboard shortcut: Shift+click pour sélection plage (bonus)
+let _lastChecked = null;
+document.querySelectorAll('.row-check').forEach(cb => {
+    cb.addEventListener('click', (e) => {
+        if (e.shiftKey && _lastChecked && _lastChecked !== cb) {
+            const all = Array.from(document.querySelectorAll('.row-check'));
+            const i1 = all.indexOf(_lastChecked);
+            const i2 = all.indexOf(cb);
+            const [from, to] = i1 < i2 ? [i1, i2] : [i2, i1];
+            for (let i = from; i <= to; i++) all[i].checked = cb.checked;
+            updateSelection();
+        }
+        _lastChecked = cb;
+    });
+});
+</script>
 {% endblock %}
