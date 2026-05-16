@@ -185,10 +185,11 @@ def upsert_prospect(data):
         update_prospect(pid, data)
         return pid
     fields = ["nom_complet", "prenom", "nom", "titre", "entreprise", "ville",
-              "email", "linkedin_url", "entreprise_linkedin", "site_url",
-              "domaine", "categorie", "veillot_signals", "recent_signals",
-              "copyright_year", "fetch_error", "stage", "interet", "notes",
-              "source"]
+              "email", "phone_mobile", "phone_office", "phone_other",
+              "linkedin_url", "entreprise_linkedin", "site_url",
+              "domaine", "siret", "categorie", "veillot_signals",
+              "recent_signals", "copyright_year", "fetch_error", "stage",
+              "interet", "notes", "source"]
     cols, vals = [], []
     for f in fields:
         if f in data:

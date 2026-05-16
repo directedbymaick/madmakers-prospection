@@ -112,6 +112,8 @@ def _run_migrations(cur):
         ("emails", "attachments_json", "TEXT"),
         ("emails", "resend_message_id","TEXT"),
         ("emails", "error_message",    "TEXT"),
+        # ADEME RGE imports (Carnet Plein®) : conserve le SIRET pour dédup + audit
+        ("prospects", "siret",         "TEXT"),
     ]
     for tbl, col, typ in additions:
         cur.execute("""
@@ -121,6 +123,15 @@ def _run_migrations(cur):
         if not cur.fetchone():
             cur.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {typ}")
             log.info(f"Migration : {tbl}.{col} ajouté")
+
+    # Index siret (créé après l'ALTER pour que la colonne existe sur les DB upgraded)
+    cur.execute("""
+        SELECT indexname FROM pg_indexes
+        WHERE schemaname='public' AND indexname='idx_prospects_siret'
+    """)
+    if not cur.fetchone():
+        cur.execute("CREATE INDEX idx_prospects_siret ON prospects(siret) WHERE siret IS NOT NULL")
+        log.info("Index idx_prospects_siret créé")
 
     # sequence_step doit avoir un default (pour les sends manuels qui n'ont pas de step)
     cur.execute("""

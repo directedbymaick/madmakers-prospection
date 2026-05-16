@@ -31,6 +31,10 @@ def detect_csv_type(headers: list[str]) -> str:
     if {"input - linkedin url", "employer"}.issubset(h_set):
         return "rocketreach"
 
+    # ADEME RGE scraper (Carnet Plein®) : sortie de scrape_rge_ademe.py
+    if "rge_qualifications" in h_set or ("siret" in h_set and "phone_office" in h_set):
+        return "ademe_rge"
+
     # Triage Mad Makers : sortie de triage_recheck.py / triage_apply_manual.py
     if "categorie" in h_set and "nom_complet" in h_set and "veillot_signals" in h_set:
         return "madmakers_triage"
@@ -71,6 +75,26 @@ ROCKETREACH_MAPPING = {
     "Mobile Phone":               "phone_mobile",
     "Office Phone":               "phone_office",
     "Other Phones":               "phone_other",
+}
+
+# ADEME RGE (sortie scrape_rge_ademe.py — Carnet Plein® sourcing)
+# Note : le SIRET est stocké dans la colonne 'siret' (ajoutée par migration db.py)
+ADEME_RGE_MAPPING = {
+    "siret":              "siret",
+    "nom_complet":        "nom_complet",
+    "prenom":             "prenom",
+    "nom":                "nom",
+    "titre":              "titre",
+    "entreprise":         "entreprise",
+    "ville":              "ville",
+    "email":              "email",
+    "phone_office":       "phone_office",    # explicite : ces phones sont des fixes pro
+    "site_url":           "site_url",
+    "domaine":            "domaine",
+    "linkedin_url":       "linkedin_url",
+    "source":             "source",
+    "categorie":          "categorie",
+    "notes":              "notes",
 }
 
 # Triage Mad Makers (sortie pipeline triage_recheck)
@@ -299,6 +323,8 @@ def normalize_rows(parsed: dict) -> list[dict]:
         mapping = ROCKETREACH_MAPPING
     elif fmt == "madmakers_triage":
         mapping = MADMAKERS_TRIAGE_MAPPING
+    elif fmt == "ademe_rge":
+        mapping = ADEME_RGE_MAPPING
     elif fmt == "crm_export":
         # CRM export : tous les headers sont déjà les champs DB
         mapping = {h: h for h in parsed.get("headers", [])}
