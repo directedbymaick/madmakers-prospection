@@ -424,12 +424,13 @@ def log_email_sent(*, prospect_id, user_id, from_email, from_name, to_email,
 
 
 SEGMENT_LABELS = {
-    "A_SANS_SITE":  "Sans site",
-    "B_DG":         "DG / Founder / CEO",
-    "C_DAF":        "DAF / Finance",
-    "D_MARKETING":  "Marketing / Growth",
-    "E_RH":         "RH / Talent",
-    "GENERIC":      "Générique",
+    "A_SANS_SITE":      "Sans site",
+    "B_DG":             "DG / Founder / CEO",
+    "C_DAF":            "DAF / Finance",
+    "D_MARKETING":      "Marketing / Growth",
+    "E_RH":             "RH / Talent",
+    "F_ARTISAN_BTP_RGE":"Artisan BTP RGE (Carnet Plein®)",
+    "GENERIC":          "Générique",
 }
 
 STEP_LABELS = {
