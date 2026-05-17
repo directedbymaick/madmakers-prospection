@@ -93,14 +93,14 @@ def create_user(email: str, password: str, full_name: str = "") -> int:
     role = "admin" if not query_one("SELECT id FROM users LIMIT 1") else "user"
     return execute(
         """INSERT INTO users (email, password_hash, full_name, role, email_verified)
-           VALUES (?, ?, ?, ?, 0)""",
+           VALUES (?, ?, ?, ?, FALSE)""",
         (email.strip().lower(), pw_hash, full_name.strip(), role),
     )
 
 
 def mark_email_verified(user_id: int):
     execute(
-        "UPDATE users SET email_verified = 1, updated_at = ? WHERE id = ?",
+        "UPDATE users SET email_verified = TRUE, updated_at = ? WHERE id = ?",
         (datetime.utcnow().isoformat(), user_id),
     )
 
