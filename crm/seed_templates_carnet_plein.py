@@ -70,7 +70,7 @@ J0_PILOTE_EXPLICATION = {
     "body_html":   H(
         "Bonjour {{prenom}},\n\n"
         "Je vais être direct : 9 artisans RGE sur 10 que je vois passer ont exactement le même problème — leur prospection dépend du bouche-à-oreille local et de quelques chantiers MaPrimeRénov' qui arrivent par hasard. Quand le hasard ralentit, le carnet se vide.\n\n"
-        "Ce qu'on fait chez Mad Makers : un système d'acquisition complet pour artisans RGE. Site optimisé pour la conversion locale, audit SEO chauffage / PAC, campagne d'acquisition ciblée IDF / HDF / Grand Est. Un seul objectif contractuel : remplir votre carnet sur 12 mois.\n\n"
+        "Ce qu'on fait chez Mad Makers : un système d'acquisition complet pour artisans RGE. Selon votre situation de départ — refonte de site existant, création from scratch ou simple optimisation — plus Google Business Profile, avis clients automatisés et campagne d'acquisition ciblée IDF / HDF / Grand Est. Un seul objectif contractuel : remplir votre carnet sur 12 mois.\n\n"
         "Le hic honnête : nous démarrons Carnet Plein® cette année. Nous n'avons pas encore d'études de cas chiffrées sur des artisans RGE. Donc plutôt que d'en inventer, on a fait l'inverse — une <strong>offre fondateur volontairement sacrifiée pour 5 artisans</strong> qui acceptent d'être documentés publiquement (nom, ville, chiffres, vidéo à M+3 / M+6 / M+12).\n\n"
         "L'offre <strong>Vague Pilote 2026</strong> :\n"
         "• 1 500 € HT setup (au lieu de 5 000 €)\n"
