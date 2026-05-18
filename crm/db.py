@@ -96,28 +96,39 @@ def cursor():
 
 
 @contextmanager
-def session():
+def session(autocommit: bool = True):
     """Maintient UNE connection partagée pour toutes les ops execute/query
-    dans le bloc. Utilise des savepoints autour de chaque opération pour
-    qu'une erreur isolée n'avorte pas la transaction entière.
+    dans le bloc — divise par 4-5 le temps des bulk imports en évitant
+    d'ouvrir une nouvelle connection au pooler Supabase par opération.
+
+    Avec autocommit=True (défaut) : chaque execute() commit immédiatement.
+    Plus de risque de "transaction aborted" après une erreur SQL. Idéal
+    pour les bulk imports où chaque ligne est indépendante.
+
+    Avec autocommit=False : transaction unique pour le bloc entier (utile
+    pour des ops liées qui doivent être atomiques).
 
     Usage :
-        with session() as s:
+        with session() as s:                # autocommit
             for row in big_list:
-                with s.savepoint():
-                    M.upsert_prospect(row)        # 1 connection partagée
-                    M.create_activity(...)        # idem
-            # commit final à la sortie du `with session()`
+                try:
+                    M.upsert_prospect(row)  # commit auto après chaque op
+                except Exception:
+                    pass                    # connection reste utilisable
     """
     conn = get_conn()
+    if autocommit:
+        conn.autocommit = True
     cur = conn.cursor()
     _session_local.cursor = cur
     _session_local.conn = conn
     try:
-        yield _SessionHandle(conn, cur)
-        conn.commit()
+        yield _SessionHandle(conn, cur, autocommit)
+        if not autocommit:
+            conn.commit()
     except Exception:
-        conn.rollback()
+        if not autocommit:
+            conn.rollback()
         raise
     finally:
         _session_local.cursor = None
@@ -126,31 +137,18 @@ def session():
 
 
 class _SessionHandle:
-    """Handle retourné par session(). Expose .savepoint() et .commit_partial()."""
+    """Handle retourné par session()."""
 
-    def __init__(self, conn, cur):
+    def __init__(self, conn, cur, autocommit):
         self._conn = conn
         self._cur = cur
-        self._sp_counter = 0
+        self._autocommit = autocommit
 
-    @contextmanager
-    def savepoint(self):
-        """Wrap une opération qui peut échouer sans avorter la transaction.
-        Rollback to savepoint en cas d'exception, release sinon."""
-        self._sp_counter += 1
-        name = f"sp_{self._sp_counter}"
-        self._cur.execute(f"SAVEPOINT {name}")
-        try:
-            yield
-            self._cur.execute(f"RELEASE SAVEPOINT {name}")
-        except Exception:
-            self._cur.execute(f"ROLLBACK TO SAVEPOINT {name}")
-            raise
-
-    def commit_partial(self):
-        """Commit ce qui est release-é jusqu'ici (utile pour bulk imports
-        où on veut voir la progression côté DB sans attendre la fin)."""
-        self._conn.commit()
+    def rollback(self):
+        """Force un rollback si la transaction est en état aborted
+        (utile en mode non-autocommit si une erreur SQL a leak)."""
+        if not self._autocommit:
+            self._conn.rollback()
 
 
 def init_db():

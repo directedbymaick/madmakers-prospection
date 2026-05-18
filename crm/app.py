@@ -1270,16 +1270,16 @@ def api_imports_import_stream():
                         "msg": f"{total} prospect{'s' if total > 1 else ''} prêt{'s' if total > 1 else ''} à importer"})
 
             inserted, updated, skipped = 0, 0, 0
-            # session() = 1 seule connection persistante pour tout l'import,
-            # avec savepoint par prospect pour qu'une erreur isolée n'avorte
-            # pas le batch entier. Passe l'import de ~2h à ~5 min sur Render.
-            with session() as s:
+            # session(autocommit=True) = 1 seule connection persistante,
+            # chaque op commit immédiatement (pas de savepoint coûteux).
+            # Une exception sur 1 prospect n'affecte pas les suivants car
+            # la connection n'est jamais en "transaction aborted" state.
+            with session(autocommit=True) as s:
                 for i, p in enumerate(normalized):
                     if not p.get("nom_complet"):
                         skipped += 1
-                        continue
-                    try:
-                        with s.savepoint():
+                    else:
+                        try:
                             existing = None
                             if p.get("entreprise"):
                                 existing = query_one(
@@ -1297,14 +1297,9 @@ def api_imports_import_stream():
                                     f"Catégorie : {p.get('categorie', 'sans_site')}",
                                     user_id=uid,
                                 )
-                    except Exception:
-                        logging.exception(f"upsert failed for {p.get('nom_complet')}")
-                        skipped += 1
-
-                    # Commit partiel tous les 100 prospects pour rendre la
-                    # progression visible côté DB et libérer le WAL Postgres.
-                    if (i + 1) % 100 == 0:
-                        s.commit_partial()
+                        except Exception:
+                            logging.exception(f"upsert failed for {p.get('nom_complet')}")
+                            skipped += 1
 
                     # Émet tous les 5 rows ou sur la dernière
                     if (i + 1) % 5 == 0 or (i + 1) == total:
