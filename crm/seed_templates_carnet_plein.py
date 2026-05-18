@@ -1,14 +1,23 @@
-"""crm.seed_templates_carnet_plein — templates email pour Carnet Plein®
-   (artisans BTP RGE en IDF/HDF/Grand Est).
+"""crm.seed_templates_carnet_plein — 15 templates email Carnet Plein®
+   pour la cohorte Vague Pilote 2026 (artisans BTP RGE en IDF / HDF / Grand Est).
 
    ⚠️ Ce script SUPPRIME tous les templates existants avant insert (--reset par défaut).
 
+   Tous les templates intègrent l'offre fondateur :
+     • Tarif Vague Pilote : 1 500 € HT setup + 250 € HT/mois × 12 mois (vs 5 000 + 800)
+     • Garantie 80% KPI sinon on continue gratis
+     • 5 places ouvertes, fermeture une fois remplies
+     • Founder's case Mad Makers (on mange notre propre cuisine, dashboard public)
+
+   Style : HTML "plain-text-look" — pas de boutons stylisés, pas d'images, une seule
+   font, max 580px de large. C'est ce qui passe l'onglet Promotions de Gmail et
+   conserve l'illusion "lettre du fondateur".
+
    Usage :
-       python -X utf8 -m crm.seed_templates_carnet_plein              # reset + reload
-       python -X utf8 -m crm.seed_templates_carnet_plein --keep       # garde l'existant, ajoute juste
+       python -X utf8 -m crm.seed_templates_carnet_plein            # reset + reload
+       python -X utf8 -m crm.seed_templates_carnet_plein --keep     # ajoute seulement
 """
 import argparse
-import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -18,29 +27,62 @@ from .db import init_db, cursor, query_one
 from .models import create_template
 
 
-# ── Signature Carnet Plein ─────────────────────────────────────
+SEG = "F_ARTISAN_BTP_RGE"
+
+
+# ── Signature plain-text-look ─────────────────────────────────
 SIG = (
-    "<br><br>"
-    "<b>{{user_prenom}}</b><br>"
-    "Carnet Plein® — Système d'acquisition pour artisans certifiés RGE<br>"
-    '<a href="https://carnetplein.mad-makers.fr">carnetplein.mad-makers.fr</a> · '
-    '<a href="{{calendly}}">Audit gratuit 20 min</a>'
+    "<p>À très vite,<br>"
+    "{{user_prenom}}<br>"
+    "Fondateur Mad Makers · Carnet Plein®<br>"
+    '<a href="mailto:{{user_email}}" style="color:#0066cc;">{{user_email}}</a></p>'
 )
 
 
 def H(text: str) -> str:
-    """Convertit texte plain (avec \\n\\n paragraphes) en HTML <p>."""
+    """Convertit du texte plain (paragraphes séparés par \\n\\n, sauts de ligne par \\n)
+    en HTML plain-text-look (sans-serif, max 580px, signature ajoutée)."""
     paras = text.strip().split("\n\n")
-    html = "".join(f"<p>{p.replace(chr(10), '<br>')}</p>" for p in paras if p.strip())
-    return html + SIG
-
-
-SEG = "F_ARTISAN_BTP_RGE"
+    body = "".join(
+        f"<p>{p.replace(chr(10), '<br>')}</p>"
+        for p in paras if p.strip()
+    )
+    return (
+        '<div style="font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\','
+        'Roboto,Arial,sans-serif;font-size:15px;line-height:1.55;color:#1a1a1a;'
+        'max-width:580px;">'
+        + body + SIG +
+        '</div>'
+    )
 
 
 # =============================================================
-# J0 — Premier contact (4 angles d'attaque)
+# J0 — Premier contact (4 angles d'attaque pour A/B testing)
 # =============================================================
+
+J0_PILOTE_EXPLICATION = {
+    "name":        "Carnet Plein · J0 · Vague Pilote — explication (principal)",
+    "description": "Premier contact — angle direct lettre du fondateur, offre fondateur transparente",
+    "category":    "cold_email",
+    "segment":     SEG,
+    "step":        "J0",
+    "subject":     "Une offre fondateur pour 5 chauffagistes RGE — explication",
+    "body_html":   H(
+        "Bonjour {{prenom}},\n\n"
+        "Je vais être direct : 9 artisans RGE sur 10 que je vois passer ont exactement le même problème — leur prospection dépend du bouche-à-oreille local et de quelques chantiers MaPrimeRénov' qui arrivent par hasard. Quand le hasard ralentit, le carnet se vide.\n\n"
+        "Ce qu'on fait chez Mad Makers : un système d'acquisition complet pour artisans RGE. Site optimisé pour la conversion locale, audit SEO chauffage / PAC, campagne d'acquisition ciblée IDF / HDF / Grand Est. Un seul objectif contractuel : remplir votre carnet sur 12 mois.\n\n"
+        "Le hic honnête : nous démarrons Carnet Plein® cette année. Nous n'avons pas encore d'études de cas chiffrées sur des artisans RGE. Donc plutôt que d'en inventer, on a fait l'inverse — une <strong>offre fondateur volontairement sacrifiée pour 5 artisans</strong> qui acceptent d'être documentés publiquement (nom, ville, chiffres, vidéo à M+3 / M+6 / M+12).\n\n"
+        "L'offre <strong>Vague Pilote 2026</strong> :\n"
+        "• 1 500 € HT setup (au lieu de 5 000 €)\n"
+        "• 250 € HT / mois pendant 12 mois (au lieu de 800 €)\n"
+        "• Soit 4 500 € HT sur 12 mois — <strong>67 % de remise</strong> sur le tarif standard\n"
+        "• Garantie écrite : si à 12 mois vous n'avez pas atteint 80 % de l'objectif convenu, on continue à travailler sans facturer\n"
+        "• <strong>5 places ouvertes</strong>. Fermeture une fois remplies.\n\n"
+        "Pour montrer qu'on mange notre propre cuisine, on documente publiquement l'application de la méthode à Mad Makers lui-même — chiffres mis à jour le 1<sup>er</sup> de chaque mois sur <a href=\"https://carnetplein.mad-makers.fr/methodologie-mad-makers\" style=\"color:#0066cc;\">carnetplein.mad-makers.fr/methodologie-mad-makers</a>.\n\n"
+        "Si vous voulez en discuter sans engagement, je bloque 30 minutes avec vous — audit gratuit de votre situation actuelle, et si l'une des 5 places vous intéresse, on signe. Sinon vous repartez avec l'audit, gracieusement.\n\n"
+        "Réservez ici : <a href=\"{{calendly}}\" style=\"color:#0066cc;\">{{calendly}}</a>"
+    ),
+}
 
 J0_CARNET = {
     "name":        "Carnet Plein · J0 · Angle carnet vide",
@@ -48,293 +90,298 @@ J0_CARNET = {
     "category":    "cold_email",
     "segment":     SEG,
     "step":        "J0",
-    "subject":     "{{entreprise}} — vos chantiers en {{ville}} ?",
+    "subject":     "{{entreprise}} — vos 2 prochains mois en {{ville}} ?",
     "body_html":   H(
         "Bonjour {{prenom}},\n\n"
         "Question pas marketing : combien de chantiers fermes pour {{entreprise}} sur les 2 prochains mois ?\n\n"
-        "Si la réponse vous donne envie de pleurer (la majorité des plombiers RGE qu'on rencontre nous disent <5 fermes en H1), c'est pas votre faute. Le bouche-à-oreille et un site fantôme, c'est pas un système — c'est de la roulette russe.\n\n"
-        "Nous on fournit un **système d'acquisition de chantiers** clés en main aux artisans RGE en {{ville}} et région. Site + Google + avis + reporting + cohort coaching. **Tarif public** : 5 000 € + 800 €/mois. **Garantie écrite** : si on n'atteint pas 80% de l'objectif à 12 mois, on continue gratuitement jusqu'à 6 mois.\n\n"
-        "20 min en visio pour voir si ça matche {{entreprise}} ? {{calendly}}"
+        "Si la réponse vous donne envie de pleurer (la majorité des plombiers RGE qu'on rencontre nous disent moins de 5 fermes en H1), c'est pas votre faute. Le bouche-à-oreille et un site fantôme, c'est pas un système — c'est de la roulette russe.\n\n"
+        "Nous on fournit un système d'acquisition de chantiers clés en main aux artisans RGE en {{ville}} et région. Site + Google + avis + reporting + cohort coaching.\n\n"
+        "On vient de lancer la <strong>Vague Pilote 2026</strong> : 1 500 € HT setup + 250 € HT/mois sur 12 mois (au lieu de 5 000 + 800), en échange d'un droit de communication publique sur les résultats. <strong>5 places, ouvertes maintenant.</strong>\n\n"
+        "Garantie écrite : si à 12 mois on n'a pas atteint 80 % de l'objectif, on continue gratuitement.\n\n"
+        "20 min en visio pour voir si ça matche {{entreprise}} ? <a href=\"{{calendly}}\" style=\"color:#0066cc;\">{{calendly}}</a>"
     ),
 }
 
 J0_GBP = {
     "name":        "Carnet Plein · J0 · Angle Google invisible",
-    "description": "Premier contact — angle GBP / Local Pack page 4",
+    "description": "Premier contact — angle Local Pack / SEO local",
     "category":    "cold_email",
     "segment":     SEG,
     "step":        "J0",
-    "subject":     "{{entreprise}} sur Google — page 4 ou page 1 ?",
+    "subject":     "{{entreprise}} sur Google — vraiment visible ?",
     "body_html":   H(
         "Bonjour {{prenom}},\n\n"
-        "J'ai tapé « plombier RGE {{ville}} » sur Google ce matin. {{entreprise}} apparaît [À COMPLÉTER — page X]. Vos confrères sur le Local Pack récupèrent <b>80 % des leads</b> de la zone — c'est mécanique.\n\n"
-        "3 trucs qui font basculer une fiche de page 4 à top 3 :\n"
-        "1. Fiche Google Business Profile renseignée à 100% (catégories, services, photos hebdo)\n"
+        "Quand un particulier de {{ville}} tape « plombier RGE » ou « pompe à chaleur » sur Google, les 3 fiches du Local Pack récupèrent <strong>80 % des leads</strong> de la zone. C'est mécanique.\n\n"
+        "3 leviers qui font basculer une fiche de page 4 à top 3 :\n"
+        "1. Fiche Google Business Profile à 100 % (catégories, services, photos hebdo)\n"
         "2. Avis clients automatisés par SMS post-chantier\n"
         "3. Pages géolocalisées sur votre site (1 page = 1 commune)\n\n"
-        "C'est ce qu'on fait pour ~30 plombiers RGE en cohort. Tarif public 5 000 € + 800/mois, <b>garantie 80% KPI sinon on continue gratos</b>.\n\n"
-        "Audit gratuit 20 min : {{calendly}}"
-    ),
-}
-
-J0_LEAD_MAGNET = {
-    "name":        "Carnet Plein · J0 · Angle PDF bonus (réciprocité)",
-    "description": "Cold soft — offre directe d'un PDF Fiche Google Parfaite, sans pitch",
-    "category":    "cold_email",
-    "segment":     SEG,
-    "step":        "J0",
-    "subject":     "Cadeau pour {{entreprise}} (60 secondes max)",
-    "body_html":   H(
-        "Bonjour {{prenom}},\n\n"
-        "Vous êtes sur chantier 8h+/jour, je vais être bref.\n\n"
-        "J'ai un PDF <b>« Fiche Google Parfaite — 12 points concrets »</b> que j'envoie aux artisans RGE qui m'écrivent. C'est ce que je fais payer à mes clients Carnet Plein® — je vous le donne gratuit.\n\n"
-        "Avec 12 ajustements de votre GBP (15 min de boulot), vous remontez en moyenne de 4 à 7 places sur Google. Suffisant pour ramener 2-3 demandes de devis en plus par mois.\n\n"
-        "Je vous l'envoie ? Répondez juste <b>« OK »</b> à ce mail."
+        "C'est exactement ce qu'on fait pour les artisans RGE qu'on accompagne. On vient de lancer la <strong>Vague Pilote 2026</strong> — 5 places à tarif fondateur (1 500 € + 250 €/mois sur 12 mois au lieu de 5 000 + 800), en échange d'un droit de communication sur les résultats.\n\n"
+        "Garantie écrite : 80 % de l'objectif à 12 mois sinon on continue gratis.\n\n"
+        "Audit gratuit 20 min de votre présence locale : <a href=\"{{calendly}}\" style=\"color:#0066cc;\">{{calendly}}</a>"
     ),
 }
 
 J0_GARANTIE = {
     "name":        "Carnet Plein · J0 · Angle garantie d'abord (Hormozi)",
-    "description": "Cold — mettre la garantie en avant tout de suite pour lever la méfiance",
+    "description": "Premier contact — angle risk reversal en accroche",
     "category":    "cold_email",
     "segment":     SEG,
     "step":        "J0",
-    "subject":     "Si on vous trouvait pas de chantier, on continuerait gratuit",
+    "subject":     "Si on vous trouvait pas de chantier, on continuerait gratis",
     "body_html":   H(
         "Bonjour {{prenom}},\n\n"
-        "Vous avez sûrement déjà entendu :<br>"
-        "« Donnez-nous 3 000 € et on vous fait un site génial. »<br>"
-        "Et 6 mois plus tard : zéro chantier en plus.\n\n"
-        "Chez Carnet Plein®, on a écrit la garantie suivante en clair dans le contrat (article 1231-1 du Code civil) :\n\n"
-        "👉 <b>Si à 12 mois on n'a pas atteint au moins 80 % de votre objectif chantiers, on continue gratuitement jusqu'à 6 mois supplémentaires.</b>\n\n"
-        "Pas de petites lignes. Pas de \"sauf si\". On a le couteau sous la gorge, et c'est précisément pour ça que les 30 artisans RGE qu'on accompagne nous font confiance.\n\n"
-        "Audit gratuit 20 min pour voir si {{entreprise}} matche : {{calendly}}\n\n"
-        "(On ne prend que 3 nouveaux artisans par mois — pour qu'on puisse vraiment livrer.)"
+        "Vous avez sûrement déjà entendu : « Donnez-nous 3 000 € et on vous fait un site génial. » Six mois plus tard, zéro chantier en plus. C'est exactement pour ça que je vous écris.\n\n"
+        "Chez Carnet Plein®, on assume une <strong>garantie écrite</strong> : si à 12 mois on n'a pas atteint 80 % de l'objectif convenu sur signature, on continue à travailler sans facturer. Pas d'avenant, pas de pirouette, pas d'astérisque.\n\n"
+        "Concrètement, l'offre fondateur <strong>Vague Pilote 2026</strong> :\n"
+        "• 1 500 € HT setup (vs 5 000 € en standard)\n"
+        "• 250 € HT/mois pendant 12 mois (vs 800)\n"
+        "• Soit 4 500 € HT sur 12 mois, garantie 80 % KPI incluse\n"
+        "• <strong>5 places ouvertes</strong>, contrepartie : droit de communication publique sur les résultats\n\n"
+        "L'offre est sacrifiée parce qu'on démarre la méthode sur l'écosystème RGE et qu'on préfère 5 vraies études de cas chiffrées à 5 témoignages bidons. Honnêteté radicale plutôt que faux social proof.\n\n"
+        "20 min sans engagement pour voir si {{entreprise}} matche : <a href=\"{{calendly}}\" style=\"color:#0066cc;\">{{calendly}}</a>"
     ),
 }
 
 
 # =============================================================
-# J+4 — Relance 1
+# J+4 — Relance 1 (offre toujours dispo, ajoute valeur)
 # =============================================================
-
-J4_CAS_CLIENT = {
-    "name":        "Carnet Plein · J+4 · Cas client chiffré",
-    "description": "Relance 1 — preuve sociale d'un artisan similaire",
-    "category":    "follow_up",
-    "segment":     SEG,
-    "step":        "J+4",
-    "subject":     "Re: {{entreprise}} — chantiers en {{ville}}",
-    "body_html":   H(
-        "{{prenom}},\n\n"
-        "Petit suivi de mon mail précédent.\n\n"
-        "Pour vous donner du concret : <b>[À COMPLÉTER — Prénom Nom du cas client]</b>, plombier RGE comme vous dans [VILLE], 4 salariés. Avant Carnet Plein® :\n"
-        "• 3-5 leads/mois via bouche-à-oreille\n"
-        "• Page 4 sur Google « plombier [VILLE] »\n"
-        "• 0 avis Google\n\n"
-        "Après 90 jours avec nous :\n"
-        "• <b>14 leads/mois entrants</b> (Google + GBP)\n"
-        "• Page 1, Local Pack position 3\n"
-        "• <b>23 avis Google 4,9 / 5</b> (SMS auto post-chantier)\n\n"
-        "Le déroulé complet en 1 page A4, je peux vous l'envoyer. Répondez « cas client » et je l'attache."
-    ),
-}
-
-J4_PDF_BONUS = {
-    "name":        "Carnet Plein · J+4 · Envoi PDF bonus comme relance",
-    "description": "Relance 1 — réciprocité, sans pitch direct",
-    "category":    "follow_up",
-    "segment":     SEG,
-    "step":        "J+4",
-    "subject":     "PDF pour {{entreprise}} — sans pitch",
-    "body_html":   H(
-        "{{prenom}},\n\n"
-        "Comme promis, je vous laisse le PDF « Fiche Google Parfaite ».\n\n"
-        "[À COMPLÉTER — joindre le PDF en pièce jointe au moment de l'envoi]\n\n"
-        "12 points qui prennent 15 min à appliquer. Pas de blabla, juste la checklist exacte.\n\n"
-        "Si après l'avoir lu, vous vous dites « OK ça serait bien que quelqu'un me fasse ça <i>plus</i> tout le reste (avis, copywriting, reporting, site SEO local) », on peut en parler 20 min : {{calendly}}\n\n"
-        "Sinon, gardez le PDF, ça vaut son poids. Aucune relance derrière."
-    ),
-}
 
 J4_QUESTION_DIRECTE = {
     "name":        "Carnet Plein · J+4 · Question directe",
-    "description": "Relance 1 — question fermée pour forcer une réponse",
+    "description": "Relance courte avec 1 question oui/non",
     "category":    "follow_up",
     "segment":     SEG,
     "step":        "J+4",
     "subject":     "Re: {{entreprise}} — 1 question",
     "body_html":   H(
         "{{prenom}},\n\n"
-        "Je sais que vous êtes occupé, donc 1 seule question :\n\n"
-        "<b>Pour {{entreprise}}, l'acquisition de nouveaux chantiers c'est :</b><br>"
-        "A) Un problème — j'ai besoin de plus de leads<br>"
-        "B) Ça va, le bouche-à-oreille suffit pour l'instant<br>"
-        "C) Pas le moment d'y penser<br>\n\n"
-        "Une lettre, un mail. Je vous laisse tranquille selon la réponse."
+        "Je sais que vous êtes sur chantier, donc une seule question :\n\n"
+        "Pour {{entreprise}}, l'acquisition de nouveaux chantiers, c'est :\n"
+        "A) Un problème — j'aimerais plus de leads, fiables, sans dépendre du bouche-à-oreille\n"
+        "B) Pas un problème — le carnet est plein 12 mois d'avance\n"
+        "C) Pas la priorité maintenant — on regardera plus tard\n\n"
+        "Si A, je vous propose 20 min en visio pour discuter de la <strong>Vague Pilote 2026</strong> (5 places à 1 500 € + 250 €/mois sur 12 mois, garantie 80 % KPI) : <a href=\"{{calendly}}\" style=\"color:#0066cc;\">{{calendly}}</a>\n\n"
+        "Si B ou C, répondez juste « B » ou « C », je vous raie de ma liste sans relancer."
+    ),
+}
+
+J4_FOUNDERS_CASE = {
+    "name":        "Carnet Plein · J+4 · Founder's case Mad Makers",
+    "description": "Relance — partage chiffres réels du founder's case",
+    "category":    "follow_up",
+    "segment":     SEG,
+    "step":        "J+4",
+    "subject":     "Re: {{entreprise}} — comment je mange ma propre cuisine",
+    "body_html":   H(
+        "{{prenom}},\n\n"
+        "Petit suivi de mon message précédent. Vous avez peut-être eu envie de me dire : « OK c'est joli sur le papier, mais ça marche vraiment ? »\n\n"
+        "Réponse honnête : je n'ai pas encore 5 études de cas chiffrées sur des artisans RGE — c'est la raison de la <strong>Vague Pilote 2026</strong>.\n\n"
+        "Mais ce que je peux montrer, c'est qu'on applique la même méthode à Mad Makers lui-même. Tous les chiffres réels de notre prospection (sourcing, taux d'ouverture, RDV pris, contrats signés) sont mis à jour le 1<sup>er</sup> de chaque mois sur :\n\n"
+        "<a href=\"https://carnetplein.mad-makers.fr/methodologie-mad-makers\" style=\"color:#0066cc;\">carnetplein.mad-makers.fr/methodologie-mad-makers</a>\n\n"
+        "C'est public, daté, et personne ne peut faire semblant.\n\n"
+        "Si ces chiffres vous parlent — et que vous avez envie de voir comment on transposerait à {{entreprise}} en {{ville}} — 20 minutes en visio, sans engagement :\n\n"
+        "<a href=\"{{calendly}}\" style=\"color:#0066cc;\">{{calendly}}</a>"
+    ),
+}
+
+J4_PDF_BONUS = {
+    "name":        "Carnet Plein · J+4 · Envoi PDF checklist",
+    "description": "Relance — envoie un PDF utile en valeur pure (réciprocité Cialdini)",
+    "category":    "follow_up",
+    "segment":     SEG,
+    "step":        "J+4",
+    "subject":     "PDF pour {{entreprise}} — sans pitch",
+    "body_html":   H(
+        "{{prenom}},\n\n"
+        "Comme promis, je vous laisse la checklist <strong>« 12 points : votre site convertit-il un client RGE ? »</strong> que j'envoie aux artisans qui prennent 30 secondes pour me répondre.\n\n"
+        "Lien direct (sans formulaire ni inscription) : <a href=\"https://carnetplein.mad-makers.fr/checklist\" style=\"color:#0066cc;\">carnetplein.mad-makers.fr/checklist</a>\n\n"
+        "12 points qui prennent 15 minutes à appliquer sur votre site existant. Aucun produit à acheter pour les mettre en œuvre.\n\n"
+        "Si après lecture vous voulez qu'on regarde ensemble votre site comme cas concret, j'ai 20 min pour vous — la <strong>Vague Pilote 2026</strong> est encore ouverte (5 places à 1 500 € + 250 €/mois, garantie 80 % KPI).\n\n"
+        "<a href=\"{{calendly}}\" style=\"color:#0066cc;\">{{calendly}}</a>\n\n"
+        "Sinon : profitez de la checklist, et bonne semaine en chantier."
     ),
 }
 
 
 # =============================================================
-# J+10 — Relance 2
+# J+10 — Relance 2 (scarcity, levée d'objection)
 # =============================================================
 
 J10_COHORT = {
-    "name":        "Carnet Plein · J+10 · Cohort qui se ferme (scarcité)",
-    "description": "Relance 2 — urgence de la cohort mensuelle 3 places max",
+    "name":        "Carnet Plein · J+10 · Places restantes (scarcity)",
+    "description": "Relance — rappel scarcity réelle sur la Vague Pilote",
     "category":    "follow_up",
     "segment":     SEG,
     "step":        "J+10",
-    "subject":     "{{entreprise}} — cohort de [MOIS] : 1 place restante",
+    "subject":     "{{entreprise}} — Vague Pilote ferme bientôt",
     "body_html":   H(
         "{{prenom}},\n\n"
-        "Petite info : on accepte <b>3 artisans RGE par mois</b> dans Carnet Plein®. Pas une de plus, pour qu'on puisse vraiment tenir les délais et la qualité.\n\n"
-        "La cohort de [À COMPLÉTER — mois] est ouverte, il reste <b>1 place</b>. Si je ne reçois pas un signe de votre part avant [DATE], elle part au prochain candidat sur ma liste — la suivante c'est dans 30 jours.\n\n"
-        "Je ne vous force pas la main. Si vous savez déjà que ce n'est pas le bon timing, dites « pas maintenant » et je vous écris en [MOIS+1].\n\n"
-        "Si au contraire le sujet redevient prioritaire pour {{entreprise}}, audit 20 min ici : {{calendly}}"
+        "Petite info : la <strong>Vague Pilote 2026</strong> a 5 places et on en a déjà bloqué quelques-unes. Le compteur à jour est ici : <a href=\"https://carnetplein.mad-makers.fr/vague-pilote\" style=\"color:#0066cc;\">carnetplein.mad-makers.fr/vague-pilote</a>\n\n"
+        "Pour rappel, à 1 500 € HT + 250 €/mois sur 12 mois (vs 5 000 + 800 en standard), avec garantie 80 % KPI, c'est <strong>67 % de remise</strong> contre un seul engagement de votre côté : qu'on puisse documenter publiquement les résultats à M+3 / M+6 / M+12. Nom, ville, chiffres, vidéo.\n\n"
+        "Une fois les 5 places fermées, on bascule sur tarif standard et on rouvre une vague seulement après avoir publié les 5 études de cas — probablement Q3 / Q4 2026.\n\n"
+        "Si {{entreprise}} fait partie des candidats sérieux, 20 min en visio avant que ça parte :\n\n"
+        "<a href=\"{{calendly}}\" style=\"color:#0066cc;\">{{calendly}}</a>"
     ),
 }
 
 J10_PRIX = {
     "name":        "Carnet Plein · J+10 · Levée d'objection prix",
-    "description": "Relance 2 — ROI sur le tarif 5k + 800/mois",
+    "description": "Relance — démonte l'objection ROI sur le tarif Vague Pilote",
     "category":    "follow_up",
     "segment":     SEG,
     "step":        "J+10",
-    "subject":     "13 800 € sur 12 mois — beaucoup ou pas tant que ça ?",
+    "subject":     "4 500 € sur 12 mois — beaucoup ou pas tant que ça ?",
     "body_html":   H(
         "{{prenom}},\n\n"
-        "Je vais être franc sur le tarif Carnet Plein® : <b>5 000 € setup + 800 €/mois × 11 = 13 800 € HT sur l'année</b>.\n\n"
-        "Question retournée : votre <b>marge moyenne par chantier</b> chez {{entreprise}}, c'est combien ?\n\n"
-        "Disons 800 € (chiffre conservateur sur un dépannage + intervention). Si Carnet Plein® vous ramène <b>2 chantiers de plus par mois</b> sur 12 mois → 24 chantiers × 800 € = <b>19 200 € de marge supplémentaire</b>. ROI net : +5 400 € minimum.\n\n"
-        "Et si on rate cet objectif, vous avez la garantie 80% KPI — on continue gratos.\n\n"
-        "Vous voulez qu'on fasse le calcul ensemble pour VOS chiffres ? 20 min : {{calendly}}"
+        "Je vais être franc sur le tarif Vague Pilote 2026 : <strong>1 500 € HT setup + 250 €/mois × 12 = 4 500 € HT sur l'année</strong>.\n\n"
+        "Question retournée : quelle est votre <strong>marge moyenne par chantier</strong> ? Pour un plombier RGE sur PAC ou chaudière condensation, on est généralement entre 1 500 et 4 000 € de marge par chantier.\n\n"
+        "Si on génère 2 chantiers en plus sur l'année grâce au système, c'est rentabilisé. L'objectif contractuel qu'on convient sur signature est largement au-dessus.\n\n"
+        "Et si on n'y arrive pas — si à 12 mois on n'a pas atteint 80 % de cet objectif — on continue à bosser sans facturer jusqu'à 6 mois. C'est dans le contrat, pas un argument de vente.\n\n"
+        "Comparaison utile :\n"
+        "• Carnet Plein® Vague Pilote : 4 500 € HT / an, garantie 80 % KPI\n"
+        "• Tarif standard (à partir de septembre) : 13 800 € HT / an\n"
+        "• Pages Jaunes Pro : ~3 600 € HT / an, zéro garantie, baisse 30 % de trafic/an\n"
+        "• Hellio/Effy commissionneurs : 10 à 20 % de marge en moins par chantier MaPrimeRénov'\n\n"
+        "Si la math vous parle, 20 min pour discuter de {{entreprise}} : <a href=\"{{calendly}}\" style=\"color:#0066cc;\">{{calendly}}</a>"
     ),
 }
 
 J10_STORY = {
-    "name":        "Carnet Plein · J+10 · Storytelling artisan terrain",
-    "description": "Relance 2 — récit émotionnel + technique",
+    "name":        "Carnet Plein · J+10 · Pourquoi Carnet Plein® existe",
+    "description": "Relance — storytelling fondateur, raison d'être",
     "category":    "follow_up",
     "segment":     SEG,
     "step":        "J+10",
-    "subject":     "Pourquoi on fait Carnet Plein® uniquement pour artisans",
+    "subject":     "Pourquoi on fait Carnet Plein® seulement pour artisans",
     "body_html":   H(
         "{{prenom}},\n\n"
-        "Je vous raconte vite pourquoi on a créé Carnet Plein® :\n\n"
-        "Il y a 6 mois, un plombier de Pontoise m'appelle. 22 ans de métier, RGE, du boulot bien fait. Mais en juin il a 4 chantiers fermes pour septembre. Il m'explique : « Les bons artisans, on connaît le métier, pas le marketing. Et les agences web qu'on a essayées, c'est 3 000 € pour un joli site qui fait rien ». Il avait pas tort.\n\n"
-        "Du coup on a productisé : <b>site SEO local + GBP + avis + reporting + cohort entre artisans, prix public, garantie écrite</b>. Pas de \"on en parle, on chiffre\". Tout est cadré.\n\n"
-        "Aujourd'hui ce plombier de Pontoise est passé de 5 à 14 leads/mois. Il vient de signer pour 12 mois supplémentaires.\n\n"
-        "Si {{entreprise}} est dans la même situation, on peut en parler : {{calendly}}"
+        "Je vous raconte vite pourquoi on a productisé Carnet Plein® :\n\n"
+        "Il y a quelques mois, un plombier de la région Hauts-de-France m'appelle. 22 ans de métier, RGE, du boulot bien fait, des clients qui le recommandent depuis toujours. Mais en juin il avait 4 chantiers fermes au lieu de 12 l'an dernier. Pas faute de compétence — faute de visibilité.\n\n"
+        "Il avait déjà essayé une « agence digitale » : 4 800 €, site joli, zéro chantier généré. Site qui marche, audience qui ne le cherche pas.\n\n"
+        "On a fait l'inverse : audit, refonte ciblée chauffage/PAC, Google Business Profile à jour, SMS post-chantier pour avis Google, contenu hyper-local. Quelques semaines plus tard, son carnet redémarre.\n\n"
+        "C'est cette méthode qu'on industrialise dans Carnet Plein® — uniquement pour artisans RGE. Pas pour avocats, pas pour SaaS, pas pour coachs. Notre <strong>Vague Pilote 2026</strong> est la 1<sup>re</sup> cohorte officielle : 5 places à tarif fondateur (1 500 € + 250 €/mois sur 12 mois, garantie 80 % KPI).\n\n"
+        "20 min sans engagement pour voir si {{entreprise}} matche : <a href=\"{{calendly}}\" style=\"color:#0066cc;\">{{calendly}}</a>"
     ),
 }
 
 
 # =============================================================
-# J+18 — Breakup
+# J+18 — Breakup (dernier message, on lâche)
 # =============================================================
 
 J18_BREAKUP = {
     "name":        "Carnet Plein · J+18 · Breakup classique",
-    "description": "Dernier mail — laisser la porte ouverte sans relancer",
+    "description": "Breakup — pas de relance, ouvre la porte sans insister",
     "category":    "breakup",
     "segment":     SEG,
     "step":        "J+18",
     "subject":     "Dernier message pour {{entreprise}}",
     "body_html":   H(
         "{{prenom}},\n\n"
-        "Promis, dernier mail — pas envie d'être lourd.\n\n"
-        "Si Carnet Plein® n'est pas le bon truc pour {{entreprise}} en ce moment, c'est ok. Le bouche-à-oreille fonctionne pour beaucoup d'artisans, et tant que ça tourne, c'est très bien.\n\n"
-        "Si dans 3 ou 6 mois ça redevient prioritaire (ralentissement, départ d'un commercial, agrandissement de l'équipe...) : {{calendly}}\n\n"
-        "Bonne suite à {{entreprise}}."
+        "Promis, dernier message. Pas envie d'être lourd.\n\n"
+        "Si Carnet Plein® n'est pas le bon truc pour {{entreprise}} en ce moment, c'est ok. Le bouche-à-oreille fonctionne pour beaucoup d'artisans, surtout après 15-20 ans de métier dans la région. Vraiment pas une critique.\n\n"
+        "La <strong>Vague Pilote 2026</strong> sera probablement complète dans les prochaines semaines — si la situation change pour vous, le lien Calendly reste actif : <a href=\"{{calendly}}\" style=\"color:#0066cc;\">{{calendly}}</a>\n\n"
+        "Sinon, bonne route à {{entreprise}}. J'espère que les chantiers s'enchaînent bien sur la fin d'année.\n\n"
+        "Et merci d'avoir lu jusqu'ici."
     ),
 }
 
 J18_BRIDGE = {
-    "name":        "Carnet Plein · J+18 · Breakup + cadeau PDF",
-    "description": "Dernier mail — offre le PDF gratuit comme cadeau de départ",
+    "name":        "Carnet Plein · J+18 · Breakup + invitation newsletter",
+    "description": "Breakup — propose la newsletter mensuelle comme pont long-terme",
     "category":    "breakup",
     "segment":     SEG,
     "step":        "J+18",
-    "subject":     "Je vous laisse tranquille — petit cadeau avant",
+    "subject":     "Je vous laisse tranquille — petite chose avant",
     "body_html":   H(
         "{{prenom}},\n\n"
         "OK, je n'insiste plus.\n\n"
-        "Avant de vous laisser tranquille, je vous joins quand même le PDF <b>« Devis qui Close à 70% »</b>. C'est 4 leviers psychologiques que mes clients Carnet Plein® utilisent pour passer leur taux de signature de 30-40% à 65-75%.\n\n"
-        "[À COMPLÉTER — joindre le PDF Devis 70%]\n\n"
-        "Pas de relance après ça. Si vous voulez bosser ensemble un jour, vous savez où me trouver : {{calendly}}\n\n"
-        "Bonne continuation."
+        "Avant de vous laisser tranquille, deux choses :\n\n"
+        "1. La checklist <strong>« 12 points pour qu'un site convertisse un client RGE »</strong> reste accessible librement ici : <a href=\"https://carnetplein.mad-makers.fr/checklist\" style=\"color:#0066cc;\">carnetplein.mad-makers.fr/checklist</a>. 15 minutes à appliquer sur votre site existant, aucun produit à acheter.\n\n"
+        "2. Une fois par mois, je publie un état des lieux chiffré de notre propre prospection Mad Makers + 1 audit public d'un artisan RGE. Si ça vous intéresse de garder un œil sans engagement, vous pouvez vous inscrire ici : <a href=\"https://carnetplein.mad-makers.fr/newsletter\" style=\"color:#0066cc;\">carnetplein.mad-makers.fr/newsletter</a>\n\n"
+        "Pas d'autres mails de prospection de ma part. Si un jour vous voulez en discuter, le Calendly reste là : <a href=\"{{calendly}}\" style=\"color:#0066cc;\">{{calendly}}</a>\n\n"
+        "Bonne route à {{entreprise}}."
     ),
 }
 
 
 # =============================================================
-# Utilitaires (post-audit, signature, kick-off)
+# Utility — Post-RDV, Post-signature, Kick-off
 # =============================================================
 
 POST_AUDIT = {
     "name":        "Carnet Plein · Post-audit · Récap + devis",
-    "description": "Email envoyé 1-3j après l'audit Calendly visio 20 min",
+    "description": "Envoyé après RDV d'audit — récap + devis Vague Pilote",
     "category":    "rdv_recap",
     "segment":     SEG,
     "step":        "custom",
-    "subject":     "Récap de notre audit + devis Carnet Plein® pour {{entreprise}}",
+    "subject":     "Récap de notre audit + devis Vague Pilote pour {{entreprise}}",
     "body_html":   H(
         "Bonjour {{prenom}},\n\n"
-        "Merci pour le temps qu'on a passé ensemble [À COMPLÉTER — jour]. Voici ce que je retiens de l'audit pour {{entreprise}} :\n\n"
-        "<b>3 axes prioritaires identifiés :</b>\n"
-        "1. [À COMPLÉTER — axe 1, ex: GBP catégories incomplètes, manque 5 points]\n"
-        "2. [À COMPLÉTER — axe 2, ex: Site sans pages géolocalisées, 0 chance Local Pack]\n"
-        "3. [À COMPLÉTER — axe 3, ex: Aucun avis Google récent, frein conversion]\n\n"
-        "<b>Objectif que je vous propose pour 12 mois :</b> [À COMPLÉTER — ex: passer de 5 à 15 leads/mois]\n\n"
-        "Le devis Carnet Plein® Intégral est en pièce jointe (5 000 € setup + 800 €/mois × 11, paiement 3× sans frais, garantie 80% KPI écrite).\n\n"
-        "Le contrat est en pièce jointe aussi. Cohort de [MOIS] : il reste [X] places. Si vous validez, signature Yousign dans la foulée.\n\n"
-        "Une question avant signature ? Répondez ici ou rappel express : {{calendly}}"
+        "Merci pour le temps qu'on a passé ensemble. Voici ce que je retiens de l'audit pour {{entreprise}} :\n\n"
+        "<strong>3 axes prioritaires identifiés :</strong>\n"
+        "• [À COMPLÉTER — Axe 1, ex : refonte page d'accueil orientée conversion]\n"
+        "• [À COMPLÉTER — Axe 2, ex : Google Business Profile + campagne avis]\n"
+        "• [À COMPLÉTER — Axe 3, ex : 5 pages géolocalisées sur les communes cibles]\n\n"
+        "<strong>Objectif convenu sur 12 mois :</strong> [À COMPLÉTER — ex : 18 leads qualifiés sur la zone {{ville}} + agglo]\n\n"
+        "<strong>Offre Vague Pilote 2026 :</strong>\n"
+        "• 1 500 € HT setup (au lieu de 5 000) → payable 50 % à signature, 50 % au déploiement validé\n"
+        "• 250 € HT / mois pendant 12 mois (au lieu de 800)\n"
+        "• Total : 4 500 € HT sur 12 mois\n"
+        "• Garantie écrite 80 % KPI sinon on continue gratis\n"
+        "• Contrepartie : droit de communication publique sur les résultats (nom, ville, chiffres, vidéos M+3 / M+6 / M+12)\n\n"
+        "Devis détaillé en pièce jointe. Si tout convient, vous pouvez signer électroniquement via le lien dans le PDF. Je bloque la place 7 jours, après quoi elle repart sur la liste d'attente.\n\n"
+        "Une question avant signature ? Répondez à ce mail ou rebookez 15 min ici : <a href=\"{{calendly}}\" style=\"color:#0066cc;\">{{calendly}}</a>"
     ),
 }
 
 POST_SIGNATURE = {
     "name":        "Carnet Plein · Post-signature · Bienvenue",
-    "description": "Email auto envoyé à la signature Yousign + acompte payé",
-    "category":    "rdv_recap",
+    "description": "Envoyé après signature + acompte — bienvenue dans la cohort",
+    "category":    "custom",
     "segment":     SEG,
     "step":        "custom",
-    "subject":     "Bienvenue dans Carnet Plein® {{entreprise}} 🎯",
+    "subject":     "Bienvenue dans la Vague Pilote {{entreprise}}",
     "body_html":   H(
         "{{prenom}},\n\n"
-        "On vient de recevoir votre signature + acompte. <b>Bienvenue dans la cohort de [À COMPLÉTER — mois].</b>\n\n"
-        "<b>Ce qui se passe maintenant :</b>\n"
-        "• <b>D+1</b> : je vous envoie le questionnaire pré-kick-off (15 min à remplir)\n"
-        "• <b>D+7</b> : kick-off groupé en visio avec les 2 autres artisans de la cohort (60 min, 9h)\n"
-        "• <b>D+14</b> : GO LIVE — site + GBP + système avis fonctionnels\n"
-        "• <b>M+1 → M+12</b> : reporting le 5 de chaque mois + call stratégique 30 min\n\n"
-        "Le groupe WhatsApp privé de la cohort vient d'être créé, je vous y ajoute aujourd'hui.\n\n"
-        "Question d'ici là ? Répondez à ce mail."
+        "On vient de recevoir votre signature + acompte. <strong>Bienvenue dans la Vague Pilote 2026 de Carnet Plein®.</strong>\n\n"
+        "<strong>Ce qui se passe maintenant :</strong>\n"
+        "• <strong>D+1</strong> : je vous envoie le questionnaire d'onboarding (positionnement, communes prioritaires, photos chantier, accès Google Business Profile)\n"
+        "• <strong>D+7</strong> : kick-off visio 60 min — vous + moi + les autres artisans de la cohort\n"
+        "• <strong>D+14 à D+45</strong> : phase setup (site, GBP, avis automatisés, pages géo)\n"
+        "• <strong>D+45 à D+365</strong> : phase acquisition active + reporting mensuel\n\n"
+        "<strong>Engagement public :</strong>\n"
+        "Comme convenu, on documente les résultats publiquement à M+3 / M+6 / M+12. Première publication début juillet. Vous validez le contenu avant publication, évidemment.\n\n"
+        "Je vous envoie le questionnaire demain matin. En attendant, bloquez le kick-off : [À COMPLÉTER — lien Meet ou Calendly réservé cohort].\n\n"
+        "Vraiment content d'avoir {{entreprise}} dans la Pilote. On a du boulot."
     ),
 }
 
 KICKOFF_J7 = {
     "name":        "Carnet Plein · Kick-off J+7 · Convocation",
-    "description": "Rappel 24h avant le kick-off groupé visio 60 min",
-    "category":    "rdv_recap",
+    "description": "Envoyé J+6 avant kick-off cohort visio 60 min",
+    "category":    "custom",
     "segment":     SEG,
     "step":        "custom",
-    "subject":     "Kick-off Carnet Plein® demain 9h — {{entreprise}}",
+    "subject":     "Kick-off Vague Pilote demain 9h — {{entreprise}}",
     "body_html":   H(
         "{{prenom}},\n\n"
-        "Demain à 9h on lance officiellement votre cohort. Visio 60 min avec les 2 autres artisans RGE qui ont signé en même temps que vous.\n\n"
-        "<b>Lien visio :</b> [À COMPLÉTER — lien Meet/Zoom]\n\n"
-        "<b>Au programme :</b>\n"
-        "1. Présentations express (5 min × 3 artisans)\n"
-        "2. Restitution audits individuels (30 min)\n"
-        "3. Plan de production J+1 → J+14 par artisan (15 min)\n"
-        "4. Q&A + setup WhatsApp groupe (10 min)\n\n"
-        "À avoir prêt :<br>"
-        "• Vos accès Google Business Profile (mail+mot de passe — on va modifier 12 points)<br>"
-        "• 5-10 photos chantiers HD si vous en avez (sinon on prend smartphone)<br>"
-        "• Un café fort\n\n"
-        "À demain {{prenom}}."
+        "Demain à 9h on lance officiellement la cohort Vague Pilote. Visio 60 min avec les autres artisans RGE qui ont signé en même temps que vous.\n\n"
+        "<strong>Lien visio :</strong> [À COMPLÉTER — lien Meet]\n\n"
+        "<strong>Programme :</strong>\n"
+        "• 0-10 min : tour de table rapide (qui fait quoi, où, depuis quand)\n"
+        "• 10-30 min : présentation détaillée de la méthode Carnet Plein® (les 4 leviers)\n"
+        "• 30-50 min : roadmap individuelle de chacun sur les 6 prochaines semaines\n"
+        "• 50-60 min : Q&R + accès aux outils partagés\n\n"
+        "<strong>À préparer côté {{entreprise}} :</strong>\n"
+        "• Liste des 5 communes prioritaires pour l'acquisition\n"
+        "• Tarif moyen / marge moyenne par chantier (pour calibrer l'objectif KPI)\n"
+        "• 5-10 photos de chantiers récents (PAC, chaudière, sanitaire — en haute déf)\n"
+        "• Accès Google Business Profile (je vous demanderai un access manager)\n\n"
+        "Si vous avez un blocage à 9h précises, dites-moi vite — on peut décaler de 30 min mais pas plus, on est 4 sur le créneau.\n\n"
+        "À demain."
     ),
 }
 
@@ -343,14 +390,14 @@ KICKOFF_J7 = {
 
 ALL_TEMPLATES = [
     # J0
-    J0_CARNET, J0_GBP, J0_LEAD_MAGNET, J0_GARANTIE,
+    J0_PILOTE_EXPLICATION, J0_CARNET, J0_GBP, J0_GARANTIE,
     # J+4
-    J4_CAS_CLIENT, J4_PDF_BONUS, J4_QUESTION_DIRECTE,
+    J4_QUESTION_DIRECTE, J4_FOUNDERS_CASE, J4_PDF_BONUS,
     # J+10
     J10_COHORT, J10_PRIX, J10_STORY,
     # J+18
     J18_BREAKUP, J18_BRIDGE,
-    # Utilitaires
+    # Utility
     POST_AUDIT, POST_SIGNATURE, KICKOFF_J7,
 ]
 
@@ -386,21 +433,23 @@ def seed(reset: bool = True):
         inserted += 1
         print(f"  ✓  {tpl['name']}")
 
-    print(f"\n=== Seed Carnet Plein® terminé ===")
+    print(f"\n=== Seed Vague Pilote 2026 terminé ===")
     print(f"  Insérés  : {inserted}")
     print(f"  Skip     : {skipped}")
     print(f"  Total    : {len(ALL_TEMPLATES)}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Seed templates Carnet Plein® artisans BTP RGE")
+    parser = argparse.ArgumentParser(description="Seed templates Carnet Plein® Vague Pilote 2026")
     parser.add_argument("--keep", action="store_true",
                         help="Garde les templates existants (ne fait qu'ajouter)")
+    parser.add_argument("--yes", action="store_true",
+                        help="Skip le prompt de confirmation (utile en CI / script)")
     args = parser.parse_args()
 
     reset = not args.keep
-    if reset:
-        ans = input("Supprimer TOUS les templates existants ET seed Carnet Plein® ? [y/N] ").strip().lower()
+    if reset and not args.yes:
+        ans = input("Supprimer TOUS les templates existants ET re-seeder Vague Pilote ? [y/N] ").strip().lower()
         if ans != "y":
             print("Annulé.")
             return
