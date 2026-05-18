@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Prospects — Mad Makers CRM{% endblock %}
-{% block page_title %}Prospects ({{ prospects|length }}){% endblock %}
+{% block page_title %}Prospects ({{ total }}){% endblock %}
 {% block topbar_actions %}
     <a href="{{ url_for('imports_view') }}" class="btn btn-sm">Import CSV</a>
     <a href="{{ url_for('pipeline') }}" class="btn btn-sm">Vue pipeline</a>
@@ -102,6 +102,23 @@
         </tbody>
     </table>
 </div>
+
+{% if total_pages > 1 %}
+<div class="pagination">
+    <span class="muted small">
+        Affichage {{ (page - 1) * page_size + 1 }}–{{ [page * page_size, total]|min }} sur {{ total }}
+    </span>
+    <div class="pagination-actions">
+        {% if page > 1 %}
+            <a class="btn btn-sm" href="{{ url_for('prospects_list', page=page-1, cat=filters.cat, stage=filters.stage, ville=filters.ville, q=filters.q) }}">← Précédent</a>
+        {% endif %}
+        <span class="muted small">Page {{ page }} / {{ total_pages }}</span>
+        {% if page < total_pages %}
+            <a class="btn btn-sm" href="{{ url_for('prospects_list', page=page+1, cat=filters.cat, stage=filters.stage, ville=filters.ville, q=filters.q) }}">Suivant →</a>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
 {% else %}
 <div class="card empty empty-large">
     Aucun prospect ne correspond aux filtres.

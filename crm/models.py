@@ -6,23 +6,49 @@ from .db import query, query_one, execute
 # ── Prospects ─────────────────────────────────────────────────
 
 
-def list_prospects(category=None, stage=None, search=None, ville=None, limit=None, order="updated_at DESC"):
-    sql = "SELECT * FROM prospects WHERE 1=1"
+def _prospects_where(category=None, stage=None, search=None, ville=None):
+    """Construit la clause WHERE + params, mutualisée entre list et count."""
+    where = " WHERE 1=1"
     params = []
     if category:
-        sql += " AND categorie = ?"; params.append(category)
+        where += " AND categorie = ?"; params.append(category)
     if stage:
-        sql += " AND stage = ?"; params.append(stage)
+        where += " AND stage = ?"; params.append(stage)
     if ville:
-        sql += " AND ville LIKE ?"; params.append(f"%{ville}%")
+        where += " AND ville LIKE ?"; params.append(f"%{ville}%")
     if search:
-        sql += " AND (nom_complet LIKE ? OR entreprise LIKE ? OR titre LIKE ? OR email LIKE ?)"
+        where += " AND (nom_complet LIKE ? OR entreprise LIKE ? OR titre LIKE ? OR email LIKE ?)"
         s = f"%{search}%"
         params.extend([s, s, s, s])
-    sql += f" ORDER BY {order}"
+    return where, params
+
+
+def list_prospects(category=None, stage=None, search=None, ville=None,
+                   limit=None, offset=0, order="updated_at DESC"):
+    where, params = _prospects_where(category, stage, search, ville)
+    sql = "SELECT * FROM prospects" + where + f" ORDER BY {order}"
     if limit:
         sql += " LIMIT ?"; params.append(limit)
+    if offset:
+        sql += " OFFSET ?"; params.append(offset)
     return query(sql, params)
+
+
+def count_prospects(category=None, stage=None, search=None, ville=None):
+    """Total matching le filtre (sans pagination). Pour barre 'X prospects'."""
+    where, params = _prospects_where(category, stage, search, ville)
+    sql = "SELECT COUNT(*) AS n FROM prospects" + where
+    return query(sql, params)[0]["n"]
+
+
+def list_distinct_villes():
+    """Liste des villes distinctes pour le filtre — 1 seule query rapide."""
+    rows = query(
+        "SELECT DISTINCT ville FROM prospects "
+        "WHERE ville IS NOT NULL AND ville != '' "
+        "ORDER BY ville"
+    )
+    return [r["ville"] for r in rows]
 
 
 def search_prospects(filters: dict, *, sample_limit: int = 5) -> dict:

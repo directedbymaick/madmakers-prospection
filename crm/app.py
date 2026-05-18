@@ -150,12 +150,22 @@ def prospects_list():
     stage = request.args.get("stage") or None
     search = request.args.get("q") or None
     ville = request.args.get("ville") or None
-    rows = M.list_prospects(category=cat, stage=stage, search=search, ville=ville)
-    # Extract distinct cities for filter
-    villes = sorted({r["ville"] for r in M.list_prospects() if r.get("ville")}, key=str.lower)
+    page = max(int(request.args.get("page", 1) or 1), 1)
+    page_size = 50
+
+    total = M.count_prospects(category=cat, stage=stage, search=search, ville=ville)
+    rows = M.list_prospects(category=cat, stage=stage, search=search, ville=ville,
+                            limit=page_size, offset=(page - 1) * page_size)
+    villes = M.list_distinct_villes()
+
+    total_pages = max((total + page_size - 1) // page_size, 1)
     return render_template("prospects.html",
                            prospects=rows,
                            villes=villes,
+                           total=total,
+                           page=page,
+                           page_size=page_size,
+                           total_pages=total_pages,
                            filters={"cat": cat, "stage": stage, "q": search, "ville": ville})
 
 
