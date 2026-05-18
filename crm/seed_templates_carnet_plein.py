@@ -32,10 +32,14 @@ from .models import create_template
 SEG = "F_ARTISAN_BTP_RGE"
 
 
-# Signature neutre (sans titre) : marche pour Maïck, Rayan ou autre signataire futur
+# Signature neutre (sans titre) : marche pour Maïck, Rayan ou autre signataire futur.
+# Petit "logo" inline = cercle noir avec C lime (initiale Carnet Plein®). Pas
+# d'image externe (chargement bloqué par défaut chez 70% des prospects, et
+# pas d'image = pas de tracking Promotions Gmail).
 SIG = (
-    "<p>À très vite,<br>"
+    '<p style="margin:24px 0 0;">À très vite,<br>'
     "{{user_prenom}}<br>"
+    '<span style="display:inline-block;width:18px;height:18px;background:#1a1a1a;color:#c8ff3d;border-radius:50%;text-align:center;line-height:18px;font-weight:700;font-size:11px;font-family:Arial,sans-serif;vertical-align:middle;margin-right:6px;">C</span>'
     "Mad Makers · Carnet Plein®<br>"
     '<a href="mailto:{{user_email}}" style="color:#0066cc;">{{user_email}}</a></p>'
 )

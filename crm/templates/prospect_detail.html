@@ -107,6 +107,13 @@
                 </span>
             </div>
 
+            <div class="row gap-2 mb-3" style="flex-wrap:wrap">
+                <button type="button" class="btn btn-sm btn-accent" onclick="markReplied({{ prospect.id }})"
+                        title="Stoppe toutes les séquences actives + annule les emails programmés">
+                    ✓ A répondu
+                </button>
+            </div>
+
             {% if prospect.phone_mobile or prospect.phone_office %}
             <div class="row gap-2 mb-3" style="flex-wrap:wrap">
                 {% if prospect.phone_mobile %}
@@ -308,6 +315,34 @@ const PROSPECT_PRENOM = {{ (prospect.prenom or prospect.nom_complet.split(' ')[0
 const PROSPECT_ENTREPRISE = {{ prospect.entreprise | tojson }};
 const CURRENT_USER_EMAIL = {{ current_user.email | tojson }};
 const CURRENT_USER_NAME  = {{ (current_user.full_name or current_user.email.split('@')[0]) | tojson }};
+
+async function markReplied(pid) {
+    const note = prompt(
+        "Marquer ce prospect comme ayant répondu ?\n\n"
+        + "Cela va :\n"
+        + "• Stopper toutes ses séquences de campagne actives\n"
+        + "• Annuler les emails programmés non encore envoyés\n"
+        + "• Logger une activité 'reply_received'\n\n"
+        + "Note optionnelle (résumé de la réponse) :",
+        ""
+    );
+    if (note === null) return;
+    const r = await fetch(`/api/prospects/${pid}/mark-replied`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({note: note.trim() || null}),
+    });
+    const data = await r.json();
+    if (data.ok) {
+        showToast(
+            `Marqué comme répondu. ${data.targets_stopped} séquence(s) stoppée(s), `
+            + `${data.emails_cancelled} email(s) annulé(s).`
+        );
+        setTimeout(() => location.reload(), 800);
+    } else {
+        showToast(data.error || "Échec");
+    }
+}
 
 async function runAudit(pid, btn) {
     btn.disabled = true; const orig = btn.textContent; btn.textContent = 'Audit en cours...';

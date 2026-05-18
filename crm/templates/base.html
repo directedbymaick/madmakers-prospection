@@ -54,11 +54,38 @@
         </a>
         {% endif %}
 
-        <div class="footer-info">
-            Local · SQLite · Flask<br>
-            Briefing intégré temps réel
-        </div>
+        <button type="button" class="bug-report-btn" onclick="openBugReport()" title="Signaler un bug, une lenteur, une typo">
+            🐛 Reporter un bug
+        </button>
     </aside>
+
+    <!-- Bug report modal (global, accessible partout) -->
+    <div id="bug-modal" class="modal" hidden>
+        <div class="modal-content" style="max-width:540px;">
+            <div class="modal-header">
+                <h2>🐛 Reporter un bug</h2>
+                <button class="modal-close" onclick="closeBugReport()">×</button>
+            </div>
+            <form id="bug-form" onsubmit="return submitBugReport(event)">
+                <div style="padding:18px 24px 8px;">
+                    <label style="display:block; font-size:12px; color:var(--fg-dim); margin-bottom:6px;">
+                        Description du bug ou de l'amélioration
+                    </label>
+                    <textarea id="bug-message" required rows="6" placeholder="Ce que vous faisiez, ce que vous attendiez, ce qui s'est passé. Captures d'écran : envoyez-les ensuite sur Slack."
+                              style="width:100%; padding:10px; background:var(--bg-2); color:var(--cream); border:1px solid var(--line-2); border-radius:var(--radius-sm); font-family:var(--sans); font-size:13px; resize:vertical;"></textarea>
+                </div>
+                <div style="padding:0 24px 18px;">
+                    <p class="small muted" style="margin:6px 0 0;">
+                        Le report est envoyé à <b>rayanmpondo@mad-makers.fr</b> avec l'URL de la page et votre identifiant CRM.
+                    </p>
+                </div>
+                <div style="padding:14px 24px; border-top:1px solid var(--line); display:flex; justify-content:flex-end; gap:8px;">
+                    <button type="button" class="btn" onclick="closeBugReport()">Annuler</button>
+                    <button type="submit" class="btn btn-accent">Envoyer le report</button>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <main class="main">
 
@@ -93,6 +120,48 @@ function showToast(msg, kind = 'info') {
     t.classList.remove('hidden');
     clearTimeout(window._toastTimer);
     window._toastTimer = setTimeout(() => t.classList.add('hidden'), 2400);
+}
+
+function openBugReport() {
+    document.getElementById('bug-modal').hidden = false;
+    setTimeout(() => document.getElementById('bug-message').focus(), 50);
+}
+function closeBugReport() {
+    document.getElementById('bug-modal').hidden = true;
+    document.getElementById('bug-message').value = '';
+}
+async function submitBugReport(e) {
+    e.preventDefault();
+    const message = document.getElementById('bug-message').value.trim();
+    if (!message) return false;
+    const btn = e.target.querySelector('button[type=submit]');
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = 'Envoi...';
+    try {
+        const r = await fetch('/api/feedback/bug', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                message: message,
+                url: window.location.href,
+                user_agent: navigator.userAgent,
+            }),
+        });
+        const data = await r.json();
+        if (data.ok) {
+            showToast('Report envoyé. Merci.');
+            closeBugReport();
+        } else {
+            showToast(data.error || 'Échec de l\'envoi');
+        }
+    } catch (err) {
+        showToast('Erreur réseau, réessayez');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = orig;
+    }
+    return false;
 }
 </script>
 

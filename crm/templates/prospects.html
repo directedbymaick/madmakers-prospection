@@ -33,6 +33,13 @@
         {% endfor %}
     </select>
 
+    <select name="metier">
+        <option value="">Tous métiers</option>
+        {% for k, label in METIER_LABELS.items() %}
+        <option value="{{ k }}" {% if filters.metier == k %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+    </select>
+
     <button type="submit" class="btn btn-primary">Filtrer</button>
     {% if filters.q or filters.cat or filters.stage or filters.ville %}
         <a href="{{ url_for('prospects_list') }}" class="btn btn-sm">Reset</a>
@@ -110,7 +117,7 @@
     </span>
     <div class="pagination-actions">
         {% if page > 1 %}
-            <a class="btn btn-sm" href="{{ url_for('prospects_list', page=page-1, cat=filters.cat, stage=filters.stage, ville=filters.ville, q=filters.q) }}">← Précédent</a>
+            <a class="btn btn-sm" href="{{ url_for('prospects_list', page=page-1, cat=filters.cat, stage=filters.stage, ville=filters.ville, metier=filters.metier, q=filters.q) }}">← Précédent</a>
         {% endif %}
         <span class="muted small">Page {{ page }} / {{ total_pages }}</span>
         {% if page < total_pages %}

@@ -1,5 +1,6 @@
-"""crm.app — Flask app + routes."""
+"""crm.app : Flask app + routes."""
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -150,11 +151,12 @@ def prospects_list():
     stage = request.args.get("stage") or None
     search = request.args.get("q") or None
     ville = request.args.get("ville") or None
+    metier = request.args.get("metier") or None
     page = max(int(request.args.get("page", 1) or 1), 1)
     page_size = 50
 
-    total = M.count_prospects(category=cat, stage=stage, search=search, ville=ville)
-    rows = M.list_prospects(category=cat, stage=stage, search=search, ville=ville,
+    total = M.count_prospects(category=cat, stage=stage, search=search, ville=ville, metier=metier)
+    rows = M.list_prospects(category=cat, stage=stage, search=search, ville=ville, metier=metier,
                             limit=page_size, offset=(page - 1) * page_size)
     villes = M.list_distinct_villes()
 
@@ -166,7 +168,9 @@ def prospects_list():
                            page=page,
                            page_size=page_size,
                            total_pages=total_pages,
-                           filters={"cat": cat, "stage": stage, "q": search, "ville": ville})
+                           METIER_LABELS=M.METIER_LABELS,
+                           filters={"cat": cat, "stage": stage, "q": search,
+                                    "ville": ville, "metier": metier})
 
 
 @app.route("/prospects/<int:pid>")
@@ -226,6 +230,64 @@ def prospect_update(pid):
                               user_id=current_user.id)
     M.update_prospect(pid, fields)
     return redirect(url_for("prospect_detail", pid=pid))
+
+
+@app.route("/api/feedback/bug", methods=["POST"])
+def api_feedback_bug():
+    """Bouton 'Reporter un bug' de la sidebar. Envoie un email à
+    rayanmpondo@mad-makers.fr avec le message + contexte (URL, user_agent,
+    user CRM connecté)."""
+    from . import email_sender as ES
+    payload = request.get_json(silent=True) or {}
+    message = (payload.get("message") or "").strip()
+    url = (payload.get("url") or "").strip()
+    user_agent = (payload.get("user_agent") or "").strip()
+    if not message:
+        return jsonify({"error": "empty_message"}), 400
+
+    reporter_email = current_user.email if current_user.is_authenticated else "(non authentifié)"
+    reporter_name = current_user.full_name if current_user.is_authenticated else "?"
+    reporter_id = current_user.id if current_user.is_authenticated else "?"
+
+    subject = f"[Bug CRM] Report de {reporter_name}"
+    body_html = (
+        f"<p><strong>De :</strong> {reporter_name} (id={reporter_id}, {reporter_email})</p>"
+        f"<p><strong>URL :</strong> <a href=\"{url}\">{url}</a></p>"
+        f"<p><strong>User-Agent :</strong> {user_agent}</p>"
+        f"<hr>"
+        f"<p><strong>Message :</strong></p>"
+        f"<pre style=\"white-space:pre-wrap;font-family:inherit;\">{message}</pre>"
+    )
+
+    try:
+        ES.send_compose_email(
+            from_email="noreply@mad-makers.fr",
+            from_name="CRM Mad Makers (bug report)",
+            reply_to=reporter_email if reporter_email != "(non authentifié)" else None,
+            to_email="rayanmpondo@mad-makers.fr",
+            subject=subject,
+            body_html=body_html,
+            text=None,
+            attachments=None,
+            unsubscribe_url=None,
+        )
+        return jsonify({"ok": True})
+    except Exception as e:
+        logging.exception("bug report send failed")
+        return jsonify({"error": "send_failed", "detail": str(e)}), 500
+
+
+@app.route("/api/prospects/<int:pid>/mark-replied", methods=["POST"])
+def api_prospect_mark_replied(pid):
+    """Marque un prospect comme ayant répondu. Stoppe toutes ses séquences
+    actives et annule les emails programmés non encore envoyés."""
+    prospect = M.get_prospect(pid)
+    if not prospect:
+        return jsonify({"error": "not_found"}), 404
+    payload = request.get_json(silent=True) or {}
+    note = (payload.get("note") or "").strip() or None
+    result = M.mark_prospect_replied(pid, user_id=current_user.id, note=note)
+    return jsonify({"ok": True, **result})
 
 
 @app.route("/prospects/<int:pid>/note", methods=["POST"])
@@ -325,7 +387,7 @@ def api_call_complete(cid):
     new_stage = None
     if statut == "RDV 2 calé":
         new_stage = "rdv_2_cale"
-    elif statut == "Signé — acompte versé" or statut == "Signé — en attente acompte":
+    elif statut == "Signé : acompte versé" or statut == "Signé : en attente acompte":
         new_stage = "signe"
     elif statut == "À relancer (envoyer mail récap)":
         new_stage = "en_relance"
@@ -354,12 +416,12 @@ def api_call_complete(cid):
         M.create_activity(
             pid, "stage_change",
             f"Stage : {STAGE_LABELS.get(prev['stage'], prev['stage'])} → {STAGE_LABELS.get(new_stage, new_stage)}",
-            f"Suite à call #{call['call_number']} — statut : {statut}",
+            f"Suite à call #{call['call_number']}, statut : {statut}",
             user_id=current_user.id,
         )
 
     M.create_activity(pid, "call",
-                      f"Call {call['call_number']} terminé — {statut or 'sans statut'}",
+                      f"Call {call['call_number']} terminé : {statut or 'sans statut'}",
                       summary,
                       user_id=current_user.id)
 
@@ -367,7 +429,7 @@ def api_call_complete(cid):
     if rdv2_date and new_stage == "rdv_2_cale":
         try:
             due = datetime.fromisoformat(f"{rdv2_date}T{rdv2_heure or '10:00'}:00")
-            M.create_activity(pid, "meeting", f"RDV 2 — {p_name(pid)}",
+            M.create_activity(pid, "meeting", f"RDV 2 : {p_name(pid)}",
                               f"Visio Calendly à {rdv2_heure or '10:00'}",
                               due_at=due.isoformat(),
                               user_id=current_user.id)
@@ -400,7 +462,7 @@ def api_audit(pid):
     audit = audit_site(p["site_url"])
     if audit.get("ok"):
         M.save_audit(pid, audit, user_id=current_user.id)
-        M.create_activity(pid, "audit", f"Audit site — {audit.get('security_grade', '?')}",
+        M.create_activity(pid, "audit", f"Audit site : {audit.get('security_grade', '?')}",
                           f"Technos: {', '.join(audit.get('technos', []))}",
                           user_id=current_user.id)
     return jsonify(audit)
@@ -496,7 +558,7 @@ def api_send_email(pid):
         if attachments_info:
             body_log += f"\nPJ : {', '.join(a['filename'] for a in attachments_info)}"
         M.create_activity(
-            pid, "email", f"Email envoyé — {subject[:60]}",
+            pid, "email", f"Email envoyé : {subject[:60]}",
             body_log, user_id=current_user.id,
         )
 

@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS prospects (
     site_url            TEXT,
     domaine             TEXT,
     siret               TEXT,                                -- ADEME RGE imports (Carnet Plein®)
+    metier              TEXT,                                -- niche : plombier_chauffagiste / electricien / couvreur / ...
     -- Triage Mad Makers
     categorie           TEXT NOT NULL DEFAULT 'sans_site',  -- sans_site / avec_site_veillot / avec_site_recent
     veillot_signals     TEXT,

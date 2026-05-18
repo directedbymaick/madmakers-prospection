@@ -170,6 +170,27 @@ input, select, textarea {
     line-height: 1.7;
 }
 
+.bug-report-btn {
+    display: block;
+    margin: 14px 18px 18px;
+    padding: 10px 14px;
+    background: transparent;
+    border: 1px dashed var(--line-2);
+    border-radius: var(--radius-sm);
+    color: var(--fg-dim);
+    font-family: var(--label);
+    font-size: 11.5px;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    text-align: center;
+    transition: border-color 0.15s ease, color 0.15s ease;
+    width: calc(100% - 36px);
+}
+.bug-report-btn:hover {
+    border-color: var(--lime);
+    color: var(--lime);
+}
+
 /* ============================================================
    Modal (email composer + future modals)
    ============================================================ */
@@ -459,6 +480,7 @@ input, select, textarea {
 }
 .composer-templates select {
     flex: 1;
+    max-width: 360px;
     background: var(--bg-2);
     color: var(--cream);
     border: 1px solid var(--line-2);
@@ -466,6 +488,9 @@ input, select, textarea {
     padding: 8px 10px;
     font-family: var(--sans);
     font-size: 13px;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
 }
 .composer-templates select:focus {
     outline: none;

@@ -187,6 +187,9 @@ def _run_migrations(cur):
         # Daily send rate-limit pour campagnes bulk (warm-up domaine,
         # éviter d'envoyer 5000 emails d'un coup). NULL = pas de limite.
         ("campaigns",  "daily_send_limit", "INTEGER"),
+        # Niche métier : plombier_chauffagiste / electricien / couvreur / ...
+        # NULL = inconnu. Permet de filtrer la base par cœur de cible.
+        ("prospects",  "metier",          "TEXT"),
     ]
     for tbl, col, typ in additions:
         cur.execute("""

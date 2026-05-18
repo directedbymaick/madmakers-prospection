@@ -6,7 +6,7 @@ from .db import query, query_one, execute
 # ── Prospects ─────────────────────────────────────────────────
 
 
-def _prospects_where(category=None, stage=None, search=None, ville=None):
+def _prospects_where(category=None, stage=None, search=None, ville=None, metier=None):
     """Construit la clause WHERE + params, mutualisée entre list et count."""
     where = " WHERE 1=1"
     params = []
@@ -16,6 +16,8 @@ def _prospects_where(category=None, stage=None, search=None, ville=None):
         where += " AND stage = ?"; params.append(stage)
     if ville:
         where += " AND ville LIKE ?"; params.append(f"%{ville}%")
+    if metier:
+        where += " AND metier = ?"; params.append(metier)
     if search:
         where += " AND (nom_complet LIKE ? OR entreprise LIKE ? OR titre LIKE ? OR email LIKE ?)"
         s = f"%{search}%"
@@ -23,9 +25,9 @@ def _prospects_where(category=None, stage=None, search=None, ville=None):
     return where, params
 
 
-def list_prospects(category=None, stage=None, search=None, ville=None,
+def list_prospects(category=None, stage=None, search=None, ville=None, metier=None,
                    limit=None, offset=0, order="updated_at DESC"):
-    where, params = _prospects_where(category, stage, search, ville)
+    where, params = _prospects_where(category, stage, search, ville, metier)
     sql = "SELECT * FROM prospects" + where + f" ORDER BY {order}"
     if limit:
         sql += " LIMIT ?"; params.append(limit)
@@ -34,9 +36,9 @@ def list_prospects(category=None, stage=None, search=None, ville=None,
     return query(sql, params)
 
 
-def count_prospects(category=None, stage=None, search=None, ville=None):
+def count_prospects(category=None, stage=None, search=None, ville=None, metier=None):
     """Total matching le filtre (sans pagination). Pour barre 'X prospects'."""
-    where, params = _prospects_where(category, stage, search, ville)
+    where, params = _prospects_where(category, stage, search, ville, metier)
     sql = "SELECT COUNT(*) AS n FROM prospects" + where
     return query(sql, params)[0]["n"]
 
@@ -213,7 +215,7 @@ def upsert_prospect(data):
     fields = ["nom_complet", "prenom", "nom", "titre", "entreprise", "ville",
               "email", "phone_mobile", "phone_office", "phone_other",
               "linkedin_url", "entreprise_linkedin", "site_url",
-              "domaine", "siret", "categorie", "veillot_signals",
+              "domaine", "siret", "metier", "categorie", "veillot_signals",
               "recent_signals", "copyright_year", "fetch_error", "stage",
               "interet", "notes", "source"]
     cols, vals = [], []
@@ -241,6 +243,73 @@ def update_stage(prospect_id, stage, note=None):
     create_activity(prospect_id, "stage_change",
                     f"Stage : {prev['stage']} → {stage}",
                     note or "")
+
+
+def mark_prospect_replied(prospect_id, user_id=None, note=None):
+    """Marque un prospect comme ayant répondu :
+    1. Set replied_at sur le dernier email envoyé qui n'a pas encore replied_at
+    2. Stoppe tous les campaign_targets actifs (status='completed', reason='replied')
+    3. Annule les emails programmés non encore envoyés pour ces campagnes
+    4. Crée une activité 'reply_received'
+
+    Retourne {targets_stopped, emails_cancelled, email_marked}.
+    """
+    from datetime import datetime
+    now = datetime.utcnow().isoformat()
+
+    # 1. Marque le dernier email envoyé comme replied
+    last_sent = query_one(
+        """SELECT id FROM emails
+           WHERE prospect_id = ? AND status = 'sent' AND replied_at IS NULL
+           ORDER BY sent_at DESC LIMIT 1""",
+        (prospect_id,),
+    )
+    email_marked = False
+    if last_sent:
+        execute(
+            "UPDATE emails SET status = 'replied', replied_at = ? WHERE id = ?",
+            (now, last_sent["id"]),
+        )
+        email_marked = True
+
+    # 2. Stoppe les targets actifs
+    active_targets = query(
+        """SELECT id, campaign_id FROM campaign_targets
+           WHERE prospect_id = ? AND status = 'active'""",
+        (prospect_id,),
+    )
+    for t in active_targets:
+        execute(
+            """UPDATE campaign_targets
+               SET status = 'completed', stop_reason = 'replied', completed_at = ?
+               WHERE id = ?""",
+            (now, t["id"]),
+        )
+
+    # 3. Annule les emails programmés non envoyés pour ces campagnes
+    emails_cancelled = 0
+    for t in active_targets:
+        n = execute(
+            """UPDATE emails
+               SET status = 'cancelled', error_message = 'prospect_replied'
+               WHERE prospect_id = ? AND campaign_id = ? AND status = 'scheduled'""",
+            (prospect_id, t["campaign_id"]),
+        )
+        emails_cancelled += n or 0
+
+    # 4. Activity log
+    create_activity(
+        prospect_id, "reply_received",
+        "Prospect a répondu",
+        note or f"{len(active_targets)} séquence(s) stoppée(s), {emails_cancelled} email(s) en attente annulé(s)",
+        user_id=user_id,
+    )
+
+    return {
+        "targets_stopped":   len(active_targets),
+        "emails_cancelled":  emails_cancelled,
+        "email_marked":      email_marked,
+    }
 
 
 # ── Audits ────────────────────────────────────────────────────
@@ -450,6 +519,21 @@ def log_email_sent(*, prospect_id, user_id, from_email, from_name, to_email,
 # ─── Email Templates ─────────────────────────────────────────
 
 
+# Niches métier (filtre `metier`). NULL = inconnu, sinon clé ci-dessous.
+METIER_LABELS = {
+    "plombier_chauffagiste": "Plombier-chauffagiste",
+    "electricien":           "Électricien",
+    "couvreur":              "Couvreur",
+    "menuisier":              "Menuisier",
+    "carreleur":              "Carreleur",
+    "maconnerie":            "Maçonnerie",
+    "isolation":             "Isolation",
+    "peintre":                "Peintre",
+    "autre_btp":             "Autre BTP",
+    "non_btp":               "Hors BTP",
+}
+
+
 SEGMENT_LABELS = {
     "A_SANS_SITE":      "Sans site",
     "B_DG":             "DG / Founder / CEO",
@@ -581,7 +665,7 @@ def render_template_for_prospect(tpl_dict: dict, prospect_dict: dict,
         "user_prenom":  user_prenom,
         "user_nom":     user_nom,
         "user_email":   u.get("email") or "",
-        "calendly":     "https://calendly.com/directedbymaick/30min",
+        "calendly":     "https://calendly.com/directedbymaick/audit-carnet-plein",
         "today":        datetime.now().strftime("%d/%m/%Y"),
     }
 
