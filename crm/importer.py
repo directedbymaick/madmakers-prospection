@@ -350,10 +350,18 @@ def normalize_rows(parsed: dict) -> list[dict]:
             d["source"] = {
                 "rocketreach":       "rocketreach",
                 "madmakers_triage":  "triage_pipeline",
+                "ademe_rge":         "ademe_rge",
                 "crm_export":        "crm_export",
                 "text_extracted":    "text_upload",
                 "generic":           "csv_generic",
             }.get(fmt, "upload")
+        # Catégorie : dérivée du site_url pour les imports ADEME RGE
+        # (la colonne categorie n'est pas dans le CSV enrichi).
+        # sans_site : pas de site → cible priorité Carnet Plein®
+        # avec_site_veillot : a un site mais probablement à refaire
+        # → on n'auto-classifie pas avec_site_recent ici (audit manuel requis)
+        if fmt == "ademe_rge" and not d.get("categorie"):
+            d["categorie"] = "avec_site_veillot" if d.get("site_url") else "sans_site"
         if d.get("nom_complet"):
             out.append(d)
     return out
