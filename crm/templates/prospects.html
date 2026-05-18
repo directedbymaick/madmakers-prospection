@@ -68,7 +68,7 @@
                 </td>
                 <td><a href="{{ url_for('prospect_detail', pid=p.id) }}">{{ p.nom_complet }}</a></td>
                 <td>{{ p.entreprise }}</td>
-                <td class="muted small">{{ p.titre[:50] }}{% if p.titre|length > 50 %}…{% endif %}</td>
+                <td class="muted small">{% set t = p.titre or '' %}{{ t[:50] }}{% if t|length > 50 %}…{% endif %}</td>
                 <td>
                     {% set cat = CATEGORIES.get(p.categorie, ('?', '#000', '#eee')) %}
                     <span class="badge badge-cat-{{ p.categorie|replace('_', '-') }}">{{ cat[0] }}</span>
