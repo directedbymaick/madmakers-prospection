@@ -140,7 +140,9 @@ const PREVIEW_VARS = {
 };
 
 function renderVars(text) {
+    {% raw %}
     return (text || '').replace(/\{\{\s*([a-z_]+)\s*\}\}/g, (_, k) => PREVIEW_VARS[k] || `{{${k}}}`);
+    {% endraw %}
 }
 
 function updatePreview() {
