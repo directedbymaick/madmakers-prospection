@@ -54,7 +54,7 @@
                 </td>
                 <td><span class="mono small">{{ STEP_LABELS.get(t.step, t.step or '—') }}</span></td>
                 <td>{% if t.category %}<span class="badge">{{ CATEGORY_LABELS.get(t.category, t.category) }}</span>{% else %}—{% endif %}</td>
-                <td class="small muted">{{ t.subject[:60] }}{% if t.subject|length > 60 %}…{% endif %}</td>
+                <td class="small muted">{% set s = t.subject or '' %}{{ s[:60] }}{% if s|length > 60 %}…{% endif %}</td>
                 <td class="small muted">{{ t.updated_at | relative }}</td>
                 <td>
                     <a href="{{ url_for('templates_edit', tpl_id=t.id) }}" class="btn btn-sm">Éditer</a>
