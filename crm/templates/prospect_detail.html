@@ -357,15 +357,25 @@ async function openEmailComposer() {
                 if (!grouped[segKey]) grouped[segKey] = [];
                 grouped[segKey].push(t);
             });
-            const segOrder = ['A_SANS_SITE', 'B_DG', 'C_DAF', 'D_MARKETING', 'E_RH', 'GENERIC', 'AUTRE'];
+            const segOrder = ['F_ARTISAN_BTP_RGE', 'A_SANS_SITE', 'B_DG', 'C_DAF', 'D_MARKETING', 'E_RH', 'GENERIC', 'AUTRE'];
+            const segLabels = {
+                'F_ARTISAN_BTP_RGE': 'Artisan BTP RGE (Carnet Plein®)',
+                'A_SANS_SITE':      'Sans site',
+                'B_DG':             'DG / Founder / CEO',
+                'C_DAF':            'DAF / Finance',
+                'D_MARKETING':      'Marketing / Growth',
+                'E_RH':             'RH / Talent',
+                'GENERIC':          'Générique',
+                'AUTRE':            'Autre',
+            };
             segOrder.forEach(seg => {
                 if (!grouped[seg]) return;
                 const og = document.createElement('optgroup');
-                og.label = seg;
+                og.label = segLabels[seg] || seg;
                 grouped[seg].forEach(t => {
                     const op = document.createElement('option');
                     op.value = t.id;
-                    op.textContent = `${t.name} — ${t.subject.substring(0, 50)}`;
+                    op.textContent = `${t.name} · ${t.subject.substring(0, 50)}`;
                     og.appendChild(op);
                 });
                 sel.appendChild(og);
