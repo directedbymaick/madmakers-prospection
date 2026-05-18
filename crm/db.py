@@ -7,6 +7,7 @@
 """
 import os
 import logging
+import threading
 from contextlib import contextmanager
 
 import psycopg
@@ -15,6 +16,10 @@ from psycopg.rows import dict_row
 from .config import SCHEMA_PATH
 
 log = logging.getLogger(__name__)
+
+# Thread-local : si une `session()` est ouverte, toutes les ops execute/query
+# dans le thread réutilisent sa connection au lieu d'en rouvrir une.
+_session_local = threading.local()
 
 
 def _database_url() -> str:
@@ -68,7 +73,16 @@ def get_conn():
 
 @contextmanager
 def cursor():
-    """Context manager : yields cursor + commits on exit, rolls back on error."""
+    """Context manager : yields cursor + commits on exit, rolls back on error.
+
+    Si une `session()` est active dans le thread courant, on réutilise sa
+    connection (pas de open/close/commit) — le caller de session() gère
+    la transaction globale. C'est ce qui fait passer un bulk import de 2h
+    à 5 min : on n'ouvre plus une connection à chaque query."""
+    sess_cur = getattr(_session_local, "cursor", None)
+    if sess_cur is not None:
+        yield sess_cur
+        return
     conn = get_conn()
     try:
         cur = conn.cursor()
@@ -79,6 +93,64 @@ def cursor():
         raise
     finally:
         conn.close()
+
+
+@contextmanager
+def session():
+    """Maintient UNE connection partagée pour toutes les ops execute/query
+    dans le bloc. Utilise des savepoints autour de chaque opération pour
+    qu'une erreur isolée n'avorte pas la transaction entière.
+
+    Usage :
+        with session() as s:
+            for row in big_list:
+                with s.savepoint():
+                    M.upsert_prospect(row)        # 1 connection partagée
+                    M.create_activity(...)        # idem
+            # commit final à la sortie du `with session()`
+    """
+    conn = get_conn()
+    cur = conn.cursor()
+    _session_local.cursor = cur
+    _session_local.conn = conn
+    try:
+        yield _SessionHandle(conn, cur)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        _session_local.cursor = None
+        _session_local.conn = None
+        conn.close()
+
+
+class _SessionHandle:
+    """Handle retourné par session(). Expose .savepoint() et .commit_partial()."""
+
+    def __init__(self, conn, cur):
+        self._conn = conn
+        self._cur = cur
+        self._sp_counter = 0
+
+    @contextmanager
+    def savepoint(self):
+        """Wrap une opération qui peut échouer sans avorter la transaction.
+        Rollback to savepoint en cas d'exception, release sinon."""
+        self._sp_counter += 1
+        name = f"sp_{self._sp_counter}"
+        self._cur.execute(f"SAVEPOINT {name}")
+        try:
+            yield
+            self._cur.execute(f"RELEASE SAVEPOINT {name}")
+        except Exception:
+            self._cur.execute(f"ROLLBACK TO SAVEPOINT {name}")
+            raise
+
+    def commit_partial(self):
+        """Commit ce qui est release-é jusqu'ici (utile pour bulk imports
+        où on veut voir la progression côté DB sans attendre la fin)."""
+        self._conn.commit()
 
 
 def init_db():
