@@ -118,6 +118,25 @@
         </section>
         {% endif %}
 
+        <section class="card">
+            <h3>Cadence d'envoi</h3>
+            {% if campaign.daily_send_limit %}
+            <p class="small">
+                <b>{{ campaign.daily_send_limit }} emails J0 / jour ouvré</b>
+                (week-ends skippés, jitter horaire 9h-17h&nbsp;UTC).<br>
+                Les relances J+4&nbsp;/&nbsp;J+10&nbsp;/&nbsp;J+18 suivent le J0 de chaque prospect.
+            </p>
+            {% else %}
+            <p class="small muted">
+                Aucune limite quotidienne — tous les emails J0 partent en même temps
+                après le lancement. À éviter au-delà de ~100 emails sur domaine fraîchement warmé.
+            </p>
+            {% endif %}
+            <button type="button" class="btn btn-sm" onclick="editDailyLimit()">
+                Modifier la limite
+            </button>
+        </section>
+
     </div>
 
 </div>
@@ -1302,6 +1321,33 @@ function renderStepDetail(data) {
 document.getElementById('step-detail-modal')?.addEventListener('click', (e) => {
     if (e.target.id === 'step-detail-modal') closeStepDetail();
 });
+
+async function editDailyLimit() {
+    const cid = window.location.pathname.match(/\/campaigns\/(\d+)/)[1];
+    const current = {{ campaign.daily_send_limit | tojson }};
+    const prompt_msg = "Limite d'envois J0 par jour ouvré ?\n\n"
+        + "• Laisser vide ou 0 pour aucune limite\n"
+        + "• Recommandé sur domaine warmé : 50-150\n"
+        + "• 100 prospects/jour × 5 jours = 500 prospects étalés sur 1 semaine ouvrée";
+    const input = window.prompt(prompt_msg, current || '');
+    if (input === null) return;
+    const value = input.trim() === '' ? null : parseInt(input, 10);
+    if (value !== null && (isNaN(value) || value < 0)) {
+        showToast("Valeur invalide");
+        return;
+    }
+    const r = await fetch(`/api/campaigns/${cid}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({daily_send_limit: value}),
+    });
+    if (r.ok) {
+        showToast(value ? `Limite mise à jour : ${value}/jour` : "Limite retirée");
+        setTimeout(() => location.reload(), 600);
+    } else {
+        showToast("Échec de la mise à jour");
+    }
+}
 
 async function launchCampaign(cid) {
     if (!confirm("Lancer la campagne ?\n\nLes emails J0 partiront immédiatement à tous les prospects actifs.\nLes suivants selon le calendrier des étapes.")) return;

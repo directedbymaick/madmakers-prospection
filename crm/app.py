@@ -801,12 +801,15 @@ def campaigns_new():
         description = (request.form.get("description") or "").strip()
         from_user_id_raw = request.form.get("from_user_id")
         from_user_id = int(from_user_id_raw) if from_user_id_raw and from_user_id_raw.isdigit() else current_user.id
+        daily_limit_raw = (request.form.get("daily_send_limit") or "").strip()
+        daily_send_limit = int(daily_limit_raw) if daily_limit_raw.isdigit() and int(daily_limit_raw) > 0 else None
         if not name:
             from flask import flash as _flash
             _flash("Le nom est requis.", "error")
             return redirect(url_for("campaigns_new"))
         cid = CMP.create_campaign(name=name, description=description,
-                                  from_user_id=from_user_id, user_id=current_user.id)
+                                  from_user_id=from_user_id, user_id=current_user.id,
+                                  daily_send_limit=daily_send_limit)
         return redirect(url_for("campaigns_detail", cid=cid))
     # GET : afficher form
     users = M.query("SELECT id, email, full_name FROM users WHERE is_active = TRUE ORDER BY full_name")
@@ -853,8 +856,21 @@ def api_campaign_update(cid):
         CMP.delete_campaign(cid)
         return jsonify({"ok": True})
     payload = request.get_json(silent=True) or {}
+    # daily_send_limit accepte None pour retirer la limite, ou int > 0 pour la fixer
+    if "daily_send_limit" in payload:
+        v = payload["daily_send_limit"]
+        if v in (None, "", "null", 0):
+            payload["daily_send_limit"] = None
+        else:
+            try:
+                payload["daily_send_limit"] = int(v)
+                if payload["daily_send_limit"] <= 0:
+                    payload["daily_send_limit"] = None
+            except (TypeError, ValueError):
+                payload["daily_send_limit"] = None
     CMP.update_campaign(cid, **{k: v for k, v in payload.items()
-                                 if k in {"name", "description", "from_user_id"}})
+                                 if k in {"name", "description", "from_user_id",
+                                          "daily_send_limit"}})
     return jsonify({"ok": True})
 
 

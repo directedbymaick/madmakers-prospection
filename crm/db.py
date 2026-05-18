@@ -184,6 +184,9 @@ def _run_migrations(cur):
         ("emails", "error_message",    "TEXT"),
         # ADEME RGE imports (Carnet Plein®) : conserve le SIRET pour dédup + audit
         ("prospects", "siret",         "TEXT"),
+        # Daily send rate-limit pour campagnes bulk (warm-up domaine,
+        # éviter d'envoyer 5000 emails d'un coup). NULL = pas de limite.
+        ("campaigns",  "daily_send_limit", "INTEGER"),
     ]
     for tbl, col, typ in additions:
         cur.execute("""

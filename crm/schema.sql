@@ -198,6 +198,7 @@ CREATE TABLE IF NOT EXISTS campaigns (
     status          TEXT NOT NULL DEFAULT 'draft',   -- draft / active / paused / completed
     from_user_id    BIGINT REFERENCES users(id) ON DELETE SET NULL,   -- signataire
     created_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    daily_send_limit INTEGER,                          -- NULL = pas de limite, sinon N max emails J0 par jour ouvré
     started_at      TIMESTAMPTZ,
     completed_at    TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),

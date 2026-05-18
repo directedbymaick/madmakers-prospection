@@ -87,11 +87,13 @@ def get_campaign_detail(cid):
     return c
 
 
-def create_campaign(*, name, description=None, from_user_id=None, user_id=None):
+def create_campaign(*, name, description=None, from_user_id=None, user_id=None,
+                    daily_send_limit=None):
     return execute(
-        """INSERT INTO campaigns (name, description, from_user_id, created_by_user_id, status)
-           VALUES (?, ?, ?, ?, 'draft')""",
-        (name, description, from_user_id, user_id),
+        """INSERT INTO campaigns
+           (name, description, from_user_id, created_by_user_id, daily_send_limit, status)
+           VALUES (?, ?, ?, ?, ?, 'draft')""",
+        (name, description, from_user_id, user_id, daily_send_limit),
     )
 
 
@@ -223,9 +225,33 @@ def mark_target_completed(target_id):
 # ── Worker : programme les prochains emails dûs ──────────────
 
 
+def _shift_to_business_day(dt: datetime) -> datetime:
+    """Si dt tombe samedi/dimanche, pousse au lundi suivant à la même heure."""
+    while dt.weekday() >= 5:  # 5 = samedi, 6 = dimanche
+        dt = dt + timedelta(days=1)
+    return dt
+
+
+def _add_business_days(dt: datetime, n_days: int) -> datetime:
+    """Ajoute n jours OUVRÉS (lun-ven) à dt. n=0 retourne dt (shifté si week-end)."""
+    dt = _shift_to_business_day(dt)
+    remaining = n_days
+    while remaining > 0:
+        dt = dt + timedelta(days=1)
+        if dt.weekday() < 5:
+            remaining -= 1
+    return dt
+
+
 def schedule_pending_emails(*, dry_run: bool = False) -> dict:
     """Pour chaque campagne active, target active, step manquant :
-    crée un email avec scheduled_at = started_at + delay_days (+hours).
+    crée un email avec scheduled_at.
+
+    Si campaign.daily_send_limit est défini, le step J0 (delay_days=0) est
+    étalé sur plusieurs jours ouvrés à hauteur de N envois/jour. Les steps
+    suivants (J+4, J+10, J+18) sont relatifs au scheduled_at du J0 du même
+    prospect, pas au started_at de la campagne — comme ça toute la séquence
+    suit la même cadence et les week-ends sont skippés.
 
     Idempotent : ne crée pas de doublon si un email existe déjà pour
     (campaign_id, prospect_id, step_id).
@@ -241,7 +267,33 @@ def schedule_pending_emails(*, dry_run: bool = False) -> dict:
         if not steps:
             continue
         targets = list_targets(c["id"], status="active")
-        for t in targets:
+
+        started_at = c.get("started_at")
+        if isinstance(started_at, str):
+            started_at = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+        if started_at and started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=timezone.utc)
+
+        # Daily limit : on calcule l'offset J0 par target dans l'ordre
+        # stable de campaign_targets.id (= ordre d'ajout). targets[i] sera
+        # programmé sur day = i // daily_limit (en jours ouvrés).
+        daily_limit = c.get("daily_send_limit")
+
+        for idx, t in enumerate(targets):
+            # Cadence J0 pour ce target — compte en jours OUVRÉS, pas calendaires
+            if daily_limit and daily_limit > 0:
+                day_offset = idx // daily_limit
+            else:
+                day_offset = 0
+            # heure jitterée stable : entre 9h et 17h UTC, pseudo-random par target
+            hour_jitter = 9 + (t["prospect_id"] % 9)
+            min_jitter = (t["prospect_id"] * 7) % 60
+
+            j0_at = _add_business_days(
+                started_at.replace(hour=hour_jitter, minute=min_jitter, second=0, microsecond=0),
+                day_offset,
+            )
+
             for step in steps:
                 # email existe déjà pour ce (target, step) ?
                 existing = query_one(
@@ -252,15 +304,13 @@ def schedule_pending_emails(*, dry_run: bool = False) -> dict:
                 if existing:
                     continue
 
-                # Calcul scheduled_at
-                started_at = c.get("started_at") or t.get("started_at")
-                if isinstance(started_at, str):
-                    started_at = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
-                if started_at.tzinfo is None:
-                    started_at = started_at.replace(tzinfo=timezone.utc)
-                scheduled_at = started_at + timedelta(
-                    days=step["delay_days"] or 0,
-                    hours=step["delay_hours"] or 0,
+                # Tous les steps sont relatifs au J0 de CE target (pas de la campagne)
+                # → la cadence J+4 / J+10 reste cohérente même si le J0 est repoussé
+                scheduled_at = _shift_to_business_day(
+                    j0_at + timedelta(
+                        days=step["delay_days"] or 0,
+                        hours=step["delay_hours"] or 0,
+                    )
                 )
 
                 if dry_run:

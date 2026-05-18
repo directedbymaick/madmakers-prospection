@@ -29,6 +29,16 @@
                 {% endfor %}
             </select>
         </label>
+        <label class="span-2">Limite quotidienne d'envois J0 (batching)
+            <input type="number" name="daily_send_limit" min="1" max="1000" step="10"
+                   placeholder="ex : 100 — laisser vide pour aucune limite">
+            <span class="muted small" style="display:block; margin-top:6px;">
+                Recommandé sur domaine fraîchement warmé : <b>50-150 emails J0/jour</b>.
+                Si tu assignes 500 prospects avec une limite de 100, la campagne s'étale sur
+                <b>5 jours ouvrés</b> (week-ends skippés automatiquement). Les relances J+4 / J+10 / J+18
+                suivent le J0 de chaque prospect, pas la date de lancement de la campagne.
+            </span>
+        </label>
         <div class="span-2 row gap-2">
             <button class="btn btn-accent" type="submit">Créer la campagne →</button>
             <a href="{{ url_for('campaigns_list') }}" class="btn">Annuler</a>
