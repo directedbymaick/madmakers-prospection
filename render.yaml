@@ -7,7 +7,7 @@ services:
   - type: web
     name: madmakers-crm
     runtime: python
-    plan: free                  # Plan gratuit : 512 Mo RAM, CPU bridé, mise en veille après 15 min d'inactivité
+    plan: starter               # Instance Starter (payante) : 512 Mo RAM, 0,5 CPU, pas de mise en veille
     branch: main
     rootDir: .
     buildCommand: pip install --upgrade pip && pip install -r crm/requirements.txt
