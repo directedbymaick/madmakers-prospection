@@ -7,11 +7,14 @@ services:
   - type: web
     name: madmakers-crm
     runtime: python
-    plan: free                  # Free tier (sleeps après 15 min d'inactivité, 50s cold start)
+    plan: free                  # Plan gratuit : 512 Mo RAM, CPU bridé, mise en veille après 15 min d'inactivité
     branch: main
     rootDir: .
     buildCommand: pip install --upgrade pip && pip install -r crm/requirements.txt
-    startCommand: gunicorn -w 2 -b 0.0.0.0:$PORT --timeout 90 --access-logfile - --error-logfile - wsgi:app
+    # 1 worker + 8 threads (gthread) : un appel lent (IA, audit, envoi) ne gèle
+    # plus tout le service, les autres requêtes passent sur les threads libres.
+    # 1 seul process = moitié moins de RAM que -w 2 (marge anti-OOM sur 512 Mo).
+    startCommand: gunicorn -w 1 --threads 8 -k gthread -b 0.0.0.0:$PORT --timeout 120 --access-logfile - --error-logfile - wsgi:app
     healthCheckPath: /auth/login
     envVars:
       - key: PYTHON_VERSION
